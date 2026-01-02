@@ -70,32 +70,41 @@
         }
 
         if(target === 'storage') {
-            cnt.innerHTML = `
-                <span class="label">LocalStorage (JSON)</span>
-                <textarea id="ls_data" class="editor" style="height:200px;"></textarea>
-                <button id="ls_save" class="btn-big" style="width:100%; margin-top:5px; border-color:#00E676;">💾 Сохранить LS</button>
-                <span class="label">Cookies (Raw)</span>
-                <textarea id="ck_data" class="editor" style="height:100px;"></textarea>
-                <button id="ck_save" class="btn-big" style="width:100%; margin-top:5px;">💾 Обновить Cookies</button>`;
-            
-            const ls = {};
-            for(let k in localStorage) if(localStorage.hasOwnProperty(k)) ls[k]=localStorage.getItem(k);
-            document.getElementById('ls_data').value = JSON.stringify(ls, null, 2);
-            document.getElementById('ck_data').value = document.cookie;
+    cnt.innerHTML = `
+        <span class="label">📝 LocalStorage (Сортировка: А-Я)</span>
+        <textarea id="ls_data" class="editor" style="height:250px; border: 2px solid #00E676;"></textarea>
+        <button id="ls_save" class="btn-big" style="width:100%; margin-top:5px; background:#004D40;">💾 СОХРАНИТЬ И ПЕРЕЗАГРУЗИТЬ</button>
+        
+        <span class="label">🍪 Cookies (Текст)</span>
+        <textarea id="ck_data" class="editor" style="height:80px;"></textarea>
+        <button id="ck_save" class="btn-big" style="width:100%; margin-top:5px;">💾 ОБНОВИТЬ COOKIES</button>
+    `;
+    
+    // Сбор данных с сортировкой
+    const ls = {};
+    Object.keys(localStorage).sort().forEach(k => {
+        ls[k] = localStorage.getItem(k);
+    });
 
-            document.getElementById('ls_save').onclick = () => {
-                try {
-                    const data = JSON.parse(document.getElementById('ls_data').value);
-                    localStorage.clear();
-                    for(let k in data) localStorage.setItem(k, data[k]);
-                    location.reload();
-                } catch(e) { alert('Ошибка JSON'); }
-            };
-            document.getElementById('ck_save').onclick = () => {
-                document.cookie = document.getElementById('ck_data').value;
-                alert('Cookies обновлены (только для записи)');
-            };
-        }
+    // Добавляем визуальные разделители в начало и конец JSON для удобства
+    const rawJson = JSON.stringify(ls, null, 4);
+    document.getElementById('ls_data').value = rawJson;
+
+    document.getElementById('ls_save').onclick = () => {
+        try {
+            const data = JSON.parse(document.getElementById('ls_data').value);
+            localStorage.clear();
+            for(let k in data) localStorage.setItem(k, data[k]);
+            location.reload();
+        } catch(e) { alert('ОШИБКА В JSON! Проверь запятые и кавычки.'); }
+    };
+    
+    document.getElementById('ck_data').value = document.cookie;
+    document.getElementById('ck_save').onclick = () => {
+        document.cookie = document.getElementById('ck_data').value;
+        alert('Cookies записаны');
+    };
+}
 
         if(target === 'db') {
             cnt.innerHTML = '<h3>IndexedDB Explorer</h3>';
