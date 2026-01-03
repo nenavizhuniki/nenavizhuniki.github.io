@@ -1,219 +1,348 @@
-(function() {
-    const ID = 'god_mode_ui';
-    if (document.getElementById(ID)) { document.getElementById(ID).remove(); return; }
+// ==UserScript==
+// @name         Dev Multitool v3.0 (Cache + IDB Fix)
+// @namespace    http://tampermonkey.net/
+// @version      3.0
+// @description  Debug tool: Eruda, Console Logs, Cache Inspector, IDB Proxy
+// @author       You
+// @match        *://*/*
+// @grant        none
+// ==/UserScript==
 
-    // --- 1. ПЕРЕХВАТ КОНСОЛИ ---
-    window._logs = window._logs || [];
-    const capture = (type, args) => {
-        window._logs.push({
-            type: type,
-            time: new Date().toLocaleTimeString(),
-            msg: Array.from(args).map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ')
-        });
+(function () {
+    'use strict';
+
+    // --- Config & State ---
+    const STATE = {
+        isOpen: false,
+        activeTab: 'logs',
+        idbHooks: {
+            enabled: false,
+            replacements: {} // 'realName': 'mockName'
+        }
     };
-    const origLog = console.log, origErr = console.error, origWarn = console.warn;
-    console.log = function() { capture('LOG', arguments); origLog.apply(console, arguments); };
-    console.error = function() { capture('ERROR', arguments); origErr.apply(console, arguments); };
-    console.warn = function() { capture('WARN', arguments); origWarn.apply(console, arguments); };
 
-    // --- 2. СТИЛИ (V6) ---
-    const style = `
-        #${ID} { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(10,10,10,0.96); z-index: 1000000; color: #fff; font-family: sans-serif; display: flex; flex-direction: column; color-scheme: dark !important; }
-        #${ID} header { padding: 15px; background: #1a1a1a; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; }
-        #${ID} .close-btn { background: #ff4444; color: #fff; border: none; padding: 8px 15px; border-radius: 5px; font-weight: bold; }
-        #${ID} .tabs { display: flex; background: #222; overflow-x: auto; border-bottom: 1px solid #333; }
-        #${ID} .tab { flex: 1; padding: 12px; text-align: center; white-space: nowrap; cursor: pointer; font-size: 13px; border-bottom: 3px solid transparent; color: #aaa; }
-        #${ID} .tab.active { border-bottom-color: #00E676; color: #00E676; background: #2a2a2a; }
-        #${ID} .content { flex: 1; overflow-y: auto; padding: 15px; }
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        .btn-big { background: #333; color: #fff; border: 1px solid #444; padding: 12px; border-radius: 8px; font-size: 13px; font-weight: bold; text-align: center; }
-        .btn-big:active { background: #444; border-color: #00E676; }
-        .card { background: #1a1a1a; padding: 12px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #333; }
-        textarea.editor { width: 100%; background: #000; color: #0f0; border: 1px solid #333; font-family: monospace; font-size: 11px; margin-top: 5px; padding: 8px; box-sizing: border-box; border-left: 3px solid #00E676; }
-        .log-item { font-family: monospace; font-size: 11px; border-bottom: 1px solid #222; padding: 5px 0; word-break: break-all; }
-        .label { font-size: 11px; color: #00E676; margin: 10px 0 5px 0; display: block; font-weight: bold; text-transform: uppercase; }
-        .usage-bar { height: 6px; background: #333; border-radius: 3px; overflow: hidden; margin-top: 8px; }
-        .usage-fill { height: 100%; background: #007bff; transition: width 0.3s; }
+    // --- UI Styles ---
+    const styles = `
+        #dev-mt-container {
+            position: fixed; bottom: 20px; right: 20px;
+            width: 450px; height: 500px;
+            background: #1e1e1e; color: #d4d4d4;
+            font-family: monospace; font-size: 12px;
+            z-index: 99999; border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            display: flex; flex-direction: column;
+            border: 1px solid #333;
+            transition: transform 0.2s;
+        }
+        #dev-mt-container.minimized {
+            height: 40px; width: 150px; overflow: hidden;
+        }
+        #dev-mt-header {
+            padding: 8px 12px; background: #252526;
+            display: flex; justify-content: space-between; align-items: center;
+            border-bottom: 1px solid #333; cursor: pointer; user-select: none;
+        }
+        #dev-mt-tabs {
+            display: flex; background: #2d2d2d;
+        }
+        .dev-mt-tab {
+            padding: 6px 12px; cursor: pointer; border-right: 1px solid #3e3e3e;
+        }
+        .dev-mt-tab:hover { background: #3e3e3e; }
+        .dev-mt-tab.active { background: #1e1e1e; font-weight: bold; color: #fff; }
+        #dev-mt-content {
+            flex: 1; overflow: hidden; display: flex; flex-direction: column;
+        }
+        .dev-mt-panel {
+            display: none; flex: 1; overflow: auto; padding: 10px;
+        }
+        .dev-mt-panel.active { display: flex; flex-direction: column; }
+        
+        /* Logs */
+        .log-entry { padding: 4px 0; border-bottom: 1px solid #333; word-break: break-all; }
+        .log-info { color: #9cdcfe; }
+        .log-warn { color: #ce9178; }
+        .log-error { color: #f44747; background: rgba(244, 71, 71, 0.1); }
+        
+        /* UI Elements */
+        button.mt-btn {
+            background: #0e639c; color: white; border: none;
+            padding: 4px 8px; border-radius: 4px; cursor: pointer; margin-right: 5px;
+        }
+        button.mt-btn:hover { background: #1177bb; }
+        input.mt-input {
+            background: #3c3c3c; border: 1px solid #555; color: white;
+            padding: 4px; margin: 2px;
+        }
+        
+        /* Preview */
+        .preview-box {
+            background: #111; padding: 8px; border: 1px solid #444;
+            margin-top: 5px; white-space: pre-wrap; max-height: 200px; overflow: auto;
+        }
+        .json-key { color: #9cdcfe; }
+        .json-string { color: #ce9178; }
+        .json-number { color: #b5cea8; }
     `;
 
-    const ui = document.createElement('div');
-    ui.id = ID;
-    ui.innerHTML = `<style>${style}</style>
-        <header><span>🚀 TOOLKIT V6 (PRO)</span><button class="close-btn">X</button></header>
-        <div class="tabs">
-            <div class="tab active" data-target="main">ПУЛЬТ</div>
-            <div class="tab" data-target="storage">ДАННЫЕ</div>
-            <div class="tab" data-target="db">ХРАНИЛИЩЕ</div>
-            <div class="tab" data-target="logs">ЛОГИ</div>
+    // --- Inject Styles ---
+    const styleSheet = document.createElement("style");
+    styleSheet.innerText = styles;
+    document.head.appendChild(styleSheet);
+
+    // --- Logger Logic ---
+    const logs = [];
+    const originalConsole = { log: console.log, warn: console.warn, error: console.error };
+    
+    function bufferLog(type, args) {
+        const msg = args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ');
+        logs.push({ type, msg, time: new Date().toLocaleTimeString() });
+        if (logs.length > 200) logs.shift();
+        renderLogs();
+    }
+
+    console.log = function(...args) { bufferLog('info', args); originalConsole.log.apply(console, args); };
+    console.warn = function(...args) { bufferLog('warn', args); originalConsole.warn.apply(console, args); };
+    console.error = function(...args) { bufferLog('error', args); originalConsole.error.apply(console, args); };
+
+    // --- IndexedDB Hook Logic ---
+    const originalOpen = IDBFactory.prototype.open;
+    
+    function initIDBProxy() {
+        IDBFactory.prototype.open = function(name, version) {
+            if (STATE.idbHooks.enabled) {
+                const subName = STATE.idbHooks.replacements[name];
+                if (subName) {
+                    originalConsole.log(`[MT-IDB] Swapping DB "${name}" -> "${subName}"`);
+                    name = subName;
+                } else {
+                    originalConsole.log(`[MT-IDB] Opening DB "${name}" (No substitution)`);
+                }
+            }
+            return originalOpen.call(this, name, version);
+        };
+    }
+    initIDBProxy();
+
+    // --- UI Rendering ---
+    const container = document.createElement('div');
+    container.id = 'dev-mt-container';
+    container.className = 'minimized';
+    
+    container.innerHTML = `
+        <div id="dev-mt-header">
+            <span>🛠 Dev Multitool</span>
+            <button id="mt-toggle-size" style="background:none;border:none;color:#fff;">[+]</button>
         </div>
-        <div class="content" id="ui_content"></div>`;
-    document.body.appendChild(ui);
+        <div id="dev-mt-tabs">
+            <div class="dev-mt-tab active" data-tab="logs">Logs</div>
+            <div class="dev-mt-tab" data-tab="cache">Cache</div>
+            <div class="dev-mt-tab" data-tab="idb">IDB Proxy</div>
+            <div class="dev-mt-tab" data-tab="tools">Tools</div>
+        </div>
+        <div id="dev-mt-content">
+            <div id="panel-logs" class="dev-mt-panel active"></div>
+            <div id="panel-cache" class="dev-mt-panel">
+                <div>
+                    <button class="mt-btn" id="btn-refresh-cache">Refresh Caches</button>
+                </div>
+                <div id="cache-list" style="margin-top:10px;"></div>
+                <div id="cache-preview" class="preview-box" style="display:none;"></div>
+            </div>
+            <div id="panel-idb" class="dev-mt-panel">
+                <label>
+                    <input type="checkbox" id="chk-idb-enable"> Enable IDB Substitution
+                </label>
+                <div style="margin-top:10px; border-top: 1px solid #444; padding-top:10px;">
+                    <div>Add Rule:</div>
+                    <input class="mt-input" id="inp-idb-from" placeholder="Original DB Name">
+                    <span>-></span>
+                    <input class="mt-input" id="inp-idb-to" placeholder="Substitute Name">
+                    <button class="mt-btn" id="btn-idb-add">Add</button>
+                </div>
+                <div id="idb-rules-list" style="margin-top:10px;"></div>
+            </div>
+            <div id="panel-tools" class="dev-mt-panel">
+                <button class="mt-btn" id="btn-load-eruda">Load Eruda</button>
+                <p style="margin-top:10px; color:#888;">More tools coming soon...</p>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(container);
 
-    ui.querySelector('.close-btn').onclick = () => ui.remove();
+    // --- Event Listeners & Logic ---
 
-    const render = async (target) => {
-        const cnt = document.getElementById('ui_content');
-        cnt.innerHTML = '';
-        
-        if(target === 'main') {
-            cnt.innerHTML = `
-                <div class="grid">
-                    <div class="btn-big" id="fn_full">📺 FULLSCREEN</div>
-                    <div class="btn-big" id="fn_edit">✏️ EDIT MODE</div>
-                    <div class="btn-big" id="fn_ua">📱 iOS UA</div>
-                    <div class="btn-big" id="fn_clean">🧹 CLEAN PAGE</div>
-                    <div class="btn-big" id="fn_eruda" style="grid-column: span 2; background: #4a148c; border:none;">🛠️ OPEN ERUDA CONSOLE</div>
-                </div>`;
-            
-            document.getElementById('fn_full').onclick = () => { document.documentElement.requestFullscreen(); ui.remove(); };
-            document.getElementById('fn_edit').onclick = () => { 
-                let s = document.designMode === 'on';
-                document.designMode = s ? 'off' : 'on';
-                document.body.contentEditable = !s;
-                ui.remove();
-            };
-            document.getElementById('fn_ua').onclick = () => {
-                const ua = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
-                Object.defineProperty(navigator, 'userAgent', { get: () => ua });
-                Object.defineProperty(navigator, 'platform', { get: () => 'iPhone' });
-                alert('iPhone UA Active'); ui.remove();
-            };
-            document.getElementById('fn_clean').onclick = () => {
-                document.querySelectorAll('*').forEach(el => { if (getComputedStyle(el).position === 'fixed') el.remove(); });
-                ui.remove();
-            };
-            document.getElementById('fn_eruda').onclick = () => {
-                const s = document.createElement('script');
-                s.src = "https://cdn.jsdelivr.net/npm/eruda";
-                document.body.appendChild(s);
-                s.onload = () => { eruda.init(); ui.remove(); };
-            };
-        }
-
-        if(target === 'storage') {
-            cnt.innerHTML = `
-                <span class="label">LocalStorage (Sorted)</span>
-                <textarea id="ls_data" class="editor" style="height:250px;"></textarea>
-                <button id="ls_save" class="btn-big" style="width:100%; margin: 5px 0 15px 0; border-color:#00E676;">💾 SAVE & RELOAD</button>
-                <span class="label">Cookies (String)</span>
-                <textarea id="ck_data" class="editor" style="height:100px; border-left-color: #ffb300;"></textarea>
-                <button id="ck_save" class="btn-big" style="width:100%; margin-top:5px;">💾 UPDATE COOKIES</button>`;
-            
-            const ls = {};
-            Object.keys(localStorage).sort().forEach(k => ls[k] = localStorage.getItem(k));
-            document.getElementById('ls_data').value = JSON.stringify(ls, null, 4);
-            document.getElementById('ck_data').value = document.cookie;
-
-            document.getElementById('ls_save').onclick = () => {
-                try {
-                    const data = JSON.parse(document.getElementById('ls_data').value);
-                    localStorage.clear();
-                    for(let k in data) localStorage.setItem(k, data[k]);
-                    location.reload();
-                } catch(e) { alert('JSON Error'); }
-            };
-            document.getElementById('ck_save').onclick = () => { document.cookie = document.getElementById('ck_data').value; alert('Cookies set'); };
-        }
-
-        if(target === 'db') {
-            // --- СЕКЦИЯ QUOTA ---
-            if (navigator.storage && navigator.storage.estimate) {
-                const est = await navigator.storage.estimate();
-                const used = (est.usage / 1024 / 1024).toFixed(2);
-                const quota = (est.quota / 1024 / 1024).toFixed(2);
-                const pct = Math.round((est.usage / est.quota) * 100);
-                cnt.innerHTML += `<div class="card">
-                    <span class="label" style="margin-top:0">Диск: ${used} MB / ${quota} MB</span>
-                    <div class="usage-bar"><div class="usage-fill" style="width:${pct}%"></div></div>
-                </div>`;
-            }
-
-            // --- INDEXED DB ---
-            cnt.innerHTML += '<span class="label">IndexedDB</span>';
-            const dbs = indexedDB.databases ? await indexedDB.databases() : [];
-            if(dbs.length === 0) cnt.innerHTML += '<div class="log-item">No DBs found</div>';
-            for(let dbInfo of dbs) {
-                const box = document.createElement('div');
-                box.className = 'card';
-                box.innerHTML = `<b style="color:#00E676">${dbInfo.name}</b>`;
-                cnt.appendChild(box);
-                const req = indexedDB.open(dbInfo.name);
-                req.onsuccess = (e) => {
-                    const db = e.target.result;
-                    Array.from(db.objectStoreNames).forEach(sN => {
-                        const row = document.createElement('div');
-                        row.style.cssText = 'display:flex; justify-content:space-between; margin-top:8px; border-top:1px solid #333; padding-top:5px; font-size:12px;';
-                        row.innerHTML = `<span>${sN}</span><div><button onclick="window._exDB('${dbInfo.name}','${sN}')">⬇️</button> <button onclick="window._imDB('${dbInfo.name}','${sN}')">⬆️</button></div>`;
-                        box.appendChild(row);
-                    });
-                };
-            }
-
-            // --- CACHE STORAGE (Вот тут прячутся те 800МБ) ---
-            cnt.innerHTML += '<span class="label">Cache Storage (Assets/AI Models)</span>';
-            if (window.caches) {
-                const keys = await caches.keys();
-                if(keys.length === 0) cnt.innerHTML += '<div class="log-item">Cache empty</div>';
-                keys.forEach(key => {
-                    const box = document.createElement('div');
-                    box.className = 'card';
-                    box.style.display = 'flex';
-                    box.style.justifyContent = 'space-between';
-                    box.innerHTML = `<span>📁 ${key}</span> <button style="background:#dc3545; color:white; border:none; border-radius:3px; padding:2px 8px;" onclick="caches.delete('${key}').then(()=>alert('Cache Deleted'))">🗑️</button>`;
-                    cnt.appendChild(box);
-                });
-            }
-        }
-
-        if(target === 'logs') {
-            cnt.innerHTML = '<button id="log_clear" class="btn-big" style="width:100%; margin-bottom:10px;">CLEAR LOGS</button>';
-            const lBox = document.createElement('div');
-            window._logs.forEach(l => {
-                const item = document.createElement('div');
-                item.className = 'log-item';
-                item.style.color = (l.type==='ERROR') ? '#ff4444' : (l.type==='WARN' ? '#ffb300' : '#00ff00');
-                item.innerText = `[${l.time}] [${l.type}] ${l.msg}`;
-                lBox.appendChild(item);
-            });
-            cnt.appendChild(lBox);
-            document.getElementById('log_clear').onclick = () => { window._logs = []; render('logs'); };
-        }
-    };
-
-    window._exDB = (n, s) => {
-        indexedDB.open(n).onsuccess = (e) => {
-            e.target.result.transaction(s, 'readonly').objectStore(s).getAll().onsuccess = (ev) => {
-                const a = document.createElement('a');
-                a.href = URL.createObjectURL(new Blob([JSON.stringify(ev.target.result, null, 2)], {type:'application/json'}));
-                a.download = `${n}_${s}.json`; a.click();
-            };
-        };
-    };
-    window._imDB = (n, s) => {
-        const i = document.createElement('input'); i.type = 'file';
-        i.onchange = (e) => {
-            const r = new FileReader();
-            r.onload = (re) => {
-                const data = JSON.parse(re.target.result);
-                indexedDB.open(n).onsuccess = (ev) => {
-                    const tx = ev.target.result.transaction(s, 'readwrite');
-                    tx.objectStore(s).clear();
-                    data.forEach(item => tx.objectStore(s).put(item));
-                    alert('Import OK! Reloading...'); location.reload();
-                };
-            };
-            r.readAsText(e.target.files[0]);
-        };
-        i.click();
-    };
-
-    ui.querySelectorAll('.tab').forEach(t => {
-        t.onclick = () => {
-            ui.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
-            t.classList.add('active');
-            render(t.dataset.target);
-        };
+    // Toggle Min/Max
+    const header = container.querySelector('#dev-mt-header');
+    header.addEventListener('click', () => {
+        container.classList.toggle('minimized');
+        const btn = container.querySelector('#mt-toggle-size');
+        btn.innerText = container.classList.contains('minimized') ? '[+]' : '[-]';
     });
 
-    render('main');
+    // Tabs Switcher
+    const tabs = container.querySelectorAll('.dev-mt-tab');
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            tabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            
+            document.querySelectorAll('.dev-mt-panel').forEach(p => p.classList.remove('active'));
+            document.getElementById(`panel-${tab.dataset.tab}`).classList.add('active');
+        });
+    });
+
+    // 1. Logs Logic
+    const logsContainer = document.getElementById('panel-logs');
+    function renderLogs() {
+        if (!logsContainer) return;
+        logsContainer.innerHTML = logs.map(l => 
+            `<div class="log-entry log-${l.type}">
+                <span style="opacity:0.6">[${l.time}]</span> ${escapeHtml(l.msg)}
+             </div>`
+        ).join('');
+        logsContainer.scrollTop = logsContainer.scrollHeight;
+    }
+    
+    // 2. Eruda Logic
+    document.getElementById('btn-load-eruda').addEventListener('click', () => {
+        const script = document.createElement('script');
+        script.src = "//cdn.jsdelivr.net/npm/eruda";
+        script.onload = () => { window.eruda.init(); };
+        document.body.appendChild(script);
+    });
+
+    // 3. Cache Logic
+    document.getElementById('btn-refresh-cache').addEventListener('click', async () => {
+        const list = document.getElementById('cache-list');
+        list.innerHTML = 'Loading...';
+        
+        try {
+            const keys = await caches.keys();
+            if (keys.length === 0) {
+                list.innerHTML = 'No Caches found.';
+                return;
+            }
+            
+            let html = '';
+            for (const key of keys) {
+                html += `<div style="margin-bottom:5px; font-weight:bold; color:#fff;">📦 ${key}</div>`;
+                const cache = await caches.open(key);
+                const requests = await cache.keys();
+                
+                requests.forEach(req => {
+                    html += `
+                        <div style="padding-left:15px; cursor:pointer; color:#9cdcfe;" 
+                             onclick="window.previewCache('${key}', '${req.url}')">
+                             📄 ${req.url.split('/').pop() || req.url}
+                        </div>`;
+                });
+            }
+            list.innerHTML = html;
+        } catch (e) {
+            list.innerText = "Error accessing Cache API: " + e.message;
+        }
+    });
+
+    // Global function for onclick injection (simplest way for innerHTML)
+    window.previewCache = async (cacheName, url) => {
+        const previewEl = document.getElementById('cache-preview');
+        previewEl.style.display = 'block';
+        previewEl.innerHTML = 'Loading content...';
+        
+        try {
+            const cache = await caches.open(cacheName);
+            const response = await cache.match(url);
+            if (!response) {
+                previewEl.innerText = 'Item not found in cache.';
+                return;
+            }
+            
+            const text = await response.text();
+            try {
+                // Try format JSON
+                const json = JSON.parse(text);
+                previewEl.innerHTML = syntaxHighlight(json);
+            } catch {
+                // Fallback text
+                previewEl.innerText = text.substring(0, 5000) + (text.length > 5000 ? '...' : '');
+            }
+        } catch (e) {
+            previewEl.innerText = "Error: " + e.message;
+        }
+    };
+
+    // 4. IDB Logic
+    const chkIdb = document.getElementById('chk-idb-enable');
+    const inpFrom = document.getElementById('inp-idb-from');
+    const inpTo = document.getElementById('inp-idb-to');
+    const btnAddRule = document.getElementById('btn-idb-add');
+    const listRules = document.getElementById('idb-rules-list');
+
+    chkIdb.addEventListener('change', (e) => {
+        STATE.idbHooks.enabled = e.target.checked;
+    });
+
+    btnAddRule.addEventListener('click', () => {
+        const from = inpFrom.value.trim();
+        const to = inpTo.value.trim();
+        if(from && to) {
+            STATE.idbHooks.replacements[from] = to;
+            renderIDBRules();
+            inpFrom.value = '';
+            inpTo.value = '';
+        }
+    });
+
+    function renderIDBRules() {
+        let html = '';
+        for (const [orig, sub] of Object.entries(STATE.idbHooks.replacements)) {
+            html += `<div style="margin-top:4px;">
+                <span style="color:#ce9178">${orig}</span> ➔ <span style="color:#b5cea8">${sub}</span>
+                <button class="mt-btn" style="padding:1px 5px; font-size:10px; background:#f44747;"
+                onclick="window.removeIDBRule('${orig}')">X</button>
+            </div>`;
+        }
+        listRules.innerHTML = html;
+    }
+
+    window.removeIDBRule = (key) => {
+        delete STATE.idbHooks.replacements[key];
+        renderIDBRules();
+    };
+
+    // --- Utilities ---
+    function escapeHtml(text) {
+        if (!text) return text;
+        return text
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
+    function syntaxHighlight(json) {
+        if (typeof json != 'string') {
+             json = JSON.stringify(json, undefined, 2);
+        }
+        json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+            var cls = 'json-number';
+            if (/^"/.test(match)) {
+                if (/:$/.test(match)) {
+                    cls = 'json-key';
+                } else {
+                    cls = 'json-string';
+                }
+            } else if (/true|false/.test(match)) {
+                cls = 'json-boolean';
+            } else if (/null/.test(match)) {
+                cls = 'json-null';
+            }
+            return '<span class="' + cls + '">' + match + '</span>';
+        });
+    }
+
 })();
