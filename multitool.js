@@ -1,9 +1,9 @@
 (function() {
-    const ID = 'mtl_v6_4';
+    const ID = 'mtl_shadow_host';
     const old = document.getElementById(ID);
     if (old) { old.remove(); return; }
 
-    // --- LOG SNIFFER ---
+    // --- LOG SNIFFER (Перехват логов) ---
     window._logs = window._logs || [];
     if (!window._console_hooked) {
         const cap = (t, a) => {
@@ -17,39 +17,70 @@
         window._console_hooked = true;
     }
 
-    const ui = document.createElement('div');
-    ui.id = ID;
-    ui.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:#050505;z-index:2147483647;color:#00ff41;font-family:monospace;display:flex;flex-direction:column;font-size:13px;line-height:1.2;';
+    // --- SHADOW DOM HOST ---
+    // Создаем контейнер-изолятор, чтобы стили сайта не ломали меню
+    const host = document.createElement('div');
+    host.id = ID;
+    host.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:2147483647;pointer-events:none;';
+    document.body.appendChild(host);
+
+    const shadow = host.attachShadow({mode: 'open'});
     
+    // Внутренний контейнер с включенными кликами
+    const ui = document.createElement('div');
+    ui.style.cssText = 'width:100%;height:100%;background:#050505;color:#00ff41;font-family:monospace;display:flex;flex-direction:column;font-size:13px;line-height:1.2;pointer-events:auto;';
+    
+    // Стили внутри изолятора
+    const style = document.createElement('style');
+    style.textContent = `
+        * { box-sizing: border-box; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-thumb { background: #00ff41; }
+        ::-webkit-scrollbar-track { background: #111; }
+        button { border:none; background:none; cursor:pointer; font-family:monospace; }
+        .mtl-tab { color: #666; border-bottom: 2px solid transparent; transition: 0.2s; font-weight: bold; font-size: 11px; padding:15px 10px; flex:1; text-align:center; white-space:nowrap; }
+        .active-tab { color: #00ff41 !important; border-bottom: 2px solid #00ff41 !important; background: #111; }
+        .b-big { background:#111; color:#00ff41; border:1px solid #333; padding:15px 5px; font-family:monospace; cursor:pointer; font-size:11px; font-weight:bold; width:100%; display:flex; align-items:center; justify-content:center; }
+        .b-big:active { background:#00ff41; color:#000; }
+        .label-txt { color:#888; font-size:10px; margin: 15px 0 5px 0; display:block; font-weight:bold; }
+        .editor-area { width:100%; background:#101010; color:#0f0; border:1px solid #333; border-left: 3px solid #00ff41; font-family:'Courier New', monospace; font-size:11px; padding:10px; margin-bottom:5px; outline:none; }
+        .row-item { display:flex; justify-content:space-between; align-items:center; padding:8px; border:1px solid #222; margin-bottom:5px; border-radius:4px; background:#0a0a0a; }
+        button.sm-btn { background:#222; color:#0f0; border:1px solid #444; padding:5px 8px; font-size:12px; margin-left:5px; border-radius:3px; }
+        button.sm-btn:active { background:#0f0; color:#000; }
+    `;
+    shadow.appendChild(style);
+
     ui.innerHTML = `
-        <div style="background:#111;padding:12px;display:flex;justify-content:space-between;border-bottom:1px solid #00ff41;flex-shrink:0;">
-            <b style="letter-spacing:1px;">TOOLKIT V6.4</b>
+        <div style="background:#111;padding:12px;display:flex;justify-content:space-between;border-bottom:1px solid #00ff41;flex-shrink:0;align-items:center;">
+            <b style="letter-spacing:1px;font-size:14px;">TOOLKIT V6.5</b>
             <button id="close_mtl" style="background:#400;color:#f00;border:1px solid #f00;padding:4px 12px;font-weight:bold;border-radius:3px;">CLOSE</button>
         </div>
         <div style="display:flex;background:#000;overflow-x:auto;border-bottom:1px solid #222;flex-shrink:0;">
-            <div class="mtl-tab active-tab" data-t="main" style="padding:15px 10px;flex:1;text-align:center;cursor:pointer;white-space:nowrap;">CORE</div>
-            <div class="mtl-tab" data-t="data" style="padding:15px 10px;flex:1;text-align:center;cursor:pointer;white-space:nowrap;">DATA</div>
-            <div class="mtl-tab" data-t="files" style="padding:15px 10px;flex:1;text-align:center;cursor:pointer;white-space:nowrap;">FILES</div>
-            <div class="mtl-tab" data-t="db" style="padding:15px 10px;flex:1;text-align:center;cursor:pointer;white-space:nowrap;">DB</div>
-            <div class="mtl-tab" data-t="logs" style="padding:15px 10px;flex:1;text-align:center;cursor:pointer;white-space:nowrap;">LOGS</div>
+            <div class="mtl-tab active-tab" data-t="main">CORE</div>
+            <div class="mtl-tab" data-t="data">DATA</div>
+            <div class="mtl-tab" data-t="files">FILES</div>
+            <div class="mtl-tab" data-t="db">DB</div>
+            <div class="mtl-tab" data-t="logs">LOGS</div>
         </div>
         <div id="mtl_cnt" style="flex:1;overflow-y:auto;padding:12px;background:#050505;"></div>
-        <style>
-            .mtl-tab { color: #666; border-bottom: 2px solid transparent; transition: 0.2s; font-weight: bold; font-size: 11px; }
-            .active-tab { color: #00ff41 !important; border-bottom: 2px solid #00ff41 !important; background: #111; }
-            .b-big { background:#111; color:#00ff41; border:1px solid #333; padding:15px 5px; font-family:monospace; cursor:pointer; font-size:11px; font-weight:bold; }
-            .b-big:active { background:#00ff41; color:#000; }
-            .label-txt { color:#888; font-size:10px; margin: 15px 0 5px 0; display:block; font-weight:bold; }
-            .editor-area { width:100%; background:#000; color:#0f0; border:1px solid #00ff41; font-family:monospace; font-size:11px; padding:10px; box-sizing:border-box; margin-bottom:5px; border-left: 4px solid #00ff41; }
-            .row-item { display:flex; justify-content:space-between; align-items:center; padding:8px; border:1px solid #222; margin-bottom:5px; border-radius:4px; background:#0a0a0a; }
-            button.sm-btn { background:#222; color:#0f0; border:1px solid #444; padding:5px 8px; font-size:12px; margin-left:5px; }
-        </style>
     `;
 
-    document.body.appendChild(ui);
-    ui.querySelector('#close_mtl').onclick = () => ui.remove();
+    shadow.appendChild(ui);
+    ui.querySelector('#close_mtl').onclick = () => host.remove();
 
     const cnt = ui.querySelector('#mtl_cnt');
+
+    // Функция надежного скачивания
+    const downloadBlob = (blob, name) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = name;
+        a.style.display = 'none';
+        document.body.appendChild(a); // Важно: добавляем в основной DOM, а не в shadow
+        a.click();
+        setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+    };
 
     const show = async (target) => {
         cnt.innerHTML = '';
@@ -67,8 +98,8 @@
             `;
             cnt.appendChild(d);
             
-            d.querySelector('#btn_fs').onclick = () => { document.documentElement.requestFullscreen().catch(()=>{}); ui.remove(); };
-            d.querySelector('#btn_ed').onclick = () => { document.designMode = document.designMode === 'on' ? 'off' : 'on'; ui.remove(); };
+            d.querySelector('#btn_fs').onclick = () => { document.documentElement.requestFullscreen().catch(()=>{}); host.remove(); };
+            d.querySelector('#btn_ed').onclick = () => { document.designMode = document.designMode === 'on' ? 'off' : 'on'; host.remove(); };
             d.querySelector('#btn_ua').onclick = () => {
                 Object.defineProperty(navigator, 'userAgent', { get: () => 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1', configurable: true });
                 alert('UA: iOS 17 Applied');
@@ -76,12 +107,12 @@
             d.querySelector('#btn_cl').onclick = () => {
                 document.querySelectorAll('*').forEach(el => { 
                     const pos = getComputedStyle(el).position;
-                    if((pos === 'fixed' || pos === 'sticky') && !el.id.includes('mtl')) el.remove(); 
+                    if((pos === 'fixed' || pos === 'sticky') && el.id !== ID) el.remove(); 
                 });
             };
             d.querySelector('#btn_er').onclick = () => {
                 const s = document.createElement('script'); s.src = "https://cdn.jsdelivr.net/npm/eruda";
-                s.onload = () => { eruda.init(); ui.remove(); };
+                s.onload = () => { eruda.init(); host.remove(); };
                 document.body.appendChild(s);
             };
         }
@@ -91,12 +122,18 @@
             
             const createSection = (title, id, initialData, saveFn) => {
                 const label = document.createElement('span'); label.className = 'label-txt'; label.innerText = title;
-                const area = document.createElement('textarea'); area.id = id; area.className = 'editor-area'; area.style.height = '140px'; area.value = initialData;
-                const btn = document.createElement('button'); btn.className = 'b-big'; btn.style.width = '100%'; btn.innerText = 'SAVE ' + title;
+                const area = document.createElement('textarea'); 
+                area.id = id; 
+                area.className = 'editor-area'; 
+                area.style.height = '140px'; 
+                area.value = initialData;
+                
+                const btn = document.createElement('button'); btn.className = 'b-big'; btn.innerText = 'SAVE ' + title;
                 btn.onclick = () => {
                     try {
                         const data = JSON.parse(area.value);
                         saveFn(data);
+                        alert(title + ' Saved! Reloading...');
                         location.reload();
                     } catch(e) { alert('JSON Error: ' + e.message); }
                 };
@@ -144,10 +181,7 @@
                         try {
                             const r = await openCache.match(req.url);
                             const b = await r.blob();
-                            const a = document.createElement('a');
-                            a.href = URL.createObjectURL(b);
-                            a.download = fileName;
-                            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                            downloadBlob(b, fileName);
                         } catch(e) { alert('Download failed: ' + e); }
                     };
                     
@@ -190,18 +224,57 @@
                         row.className = 'row-item'; row.style.marginTop = '5px';
                         row.innerHTML = `<span style="color:#aaa;font-size:11px;">${storeName}</span>`;
                         
+                        const btnDiv = document.createElement('div');
+                        
+                        // EXPORT BUTTON
                         const btnEx = document.createElement('button'); btnEx.className='sm-btn'; btnEx.innerText = 'EXPORT';
                         btnEx.onclick = () => {
                             const tx = db.transaction(storeName, 'readonly');
                             const store = tx.objectStore(storeName);
                             store.getAll().onsuccess = (ev) => {
-                                const a = document.createElement('a');
-                                a.href = URL.createObjectURL(new Blob([JSON.stringify(ev.target.result, null, 2)], {type:'application/json'}));
-                                a.download = `${dbInfo.name}_${storeName}.json`;
-                                document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                                const dataStr = JSON.stringify(ev.target.result, null, 2);
+                                const blob = new Blob([dataStr], {type:'application/json'});
+                                downloadBlob(blob, `${dbInfo.name}_${storeName}.json`);
                             };
                         };
-                        row.appendChild(btnEx);
+                        
+                        // IMPORT BUTTON
+                        const btnIm = document.createElement('button'); btnIm.className='sm-btn'; btnIm.innerText = '✏️ IMPORT';
+                        btnIm.onclick = () => {
+                             const i = document.createElement('input'); i.type = 'file';
+                             i.onchange = (evFile) => {
+                                 const f = evFile.target.files[0];
+                                 if(!f) return;
+                                 const reader = new FileReader();
+                                 reader.onload = (res) => {
+                                     try {
+                                         const jsonData = JSON.parse(res.target.result);
+                                         if(!Array.isArray(jsonData)) throw new Error('JSON must be an array of objects');
+                                         
+                                         const tx = db.transaction(storeName, 'readwrite');
+                                         const store = tx.objectStore(storeName);
+                                         
+                                         // Очищаем и перезаписываем
+                                         const clr = store.clear();
+                                         clr.onsuccess = () => {
+                                             let count = 0;
+                                             jsonData.forEach(item => {
+                                                 store.put(item);
+                                                 count++;
+                                             });
+                                             alert(`Imported ${count} items to ${storeName}`);
+                                         };
+                                         clr.onerror = (err) => alert('Clear failed: ' + err);
+                                     } catch(err) { alert('Import error: ' + err.message); }
+                                 };
+                                 reader.readAsText(f);
+                             };
+                             i.click();
+                        };
+
+                        btnDiv.appendChild(btnEx);
+                        btnDiv.appendChild(btnIm);
+                        row.appendChild(btnDiv);
                         box.appendChild(row);
                     });
                     db.close();
