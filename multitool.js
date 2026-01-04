@@ -3,7 +3,7 @@
     const old = document.getElementById(ID);
     if (old) { old.remove(); return; }
 
-    // --- LOG SNIFFER (Перехват логов) ---
+    // --- LOG SNIFFER ---
     window._logs = window._logs || [];
     if (!window._console_hooked) {
         const cap = (t, a) => {
@@ -17,8 +17,7 @@
         window._console_hooked = true;
     }
 
-    // --- SHADOW DOM HOST ---
-    // Создаем контейнер-изолятор, чтобы стили сайта не ломали меню
+    // --- UI SETUP ---
     const host = document.createElement('div');
     host.id = ID;
     host.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:2147483647;pointer-events:none;';
@@ -26,11 +25,9 @@
 
     const shadow = host.attachShadow({mode: 'open'});
     
-    // Внутренний контейнер с включенными кликами
     const ui = document.createElement('div');
     ui.style.cssText = 'width:100%;height:100%;background:#050505;color:#00ff41;font-family:monospace;display:flex;flex-direction:column;font-size:13px;line-height:1.2;pointer-events:auto;';
     
-    // Стили внутри изолятора
     const style = document.createElement('style');
     style.textContent = `
         * { box-sizing: border-box; }
@@ -52,7 +49,7 @@
 
     ui.innerHTML = `
         <div style="background:#111;padding:12px;display:flex;justify-content:space-between;border-bottom:1px solid #00ff41;flex-shrink:0;align-items:center;">
-            <b style="letter-spacing:1px;font-size:14px;">TOOLKIT V6.5</b>
+            <b style="letter-spacing:1px;font-size:14px;">TOOLKIT V6.6</b>
             <button id="close_mtl" style="background:#400;color:#f00;border:1px solid #f00;padding:4px 12px;font-weight:bold;border-radius:3px;">CLOSE</button>
         </div>
         <div style="display:flex;background:#000;overflow-x:auto;border-bottom:1px solid #222;flex-shrink:0;">
@@ -67,19 +64,23 @@
 
     shadow.appendChild(ui);
     ui.querySelector('#close_mtl').onclick = () => host.remove();
-
     const cnt = ui.querySelector('#mtl_cnt');
 
-    // Функция надежного скачивания
+    // --- DOWNLOAD FIX ---
     const downloadBlob = (blob, name) => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = name;
-        a.style.display = 'none';
-        document.body.appendChild(a); // Важно: добавляем в основной DOM, а не в shadow
-        a.click();
-        setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+        try {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = name;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            // Ждем минуту перед удалением ссылки из памяти, чтобы мобильный хром успел подхватить поток
+            setTimeout(() => URL.revokeObjectURL(url), 60000);
+        } catch(e) {
+            alert('Download Error: ' + e.message);
+        }
     };
 
     const show = async (target) => {
@@ -119,15 +120,9 @@
 
         if (target === 'data') {
             const getJ = (s) => { let o={}; Object.keys(s).sort().forEach(k=>o[k]=s.getItem(k)); return JSON.stringify(o,null,2); };
-            
             const createSection = (title, id, initialData, saveFn) => {
                 const label = document.createElement('span'); label.className = 'label-txt'; label.innerText = title;
-                const area = document.createElement('textarea'); 
-                area.id = id; 
-                area.className = 'editor-area'; 
-                area.style.height = '140px'; 
-                area.value = initialData;
-                
+                const area = document.createElement('textarea'); area.id = id; area.className = 'editor-area'; area.style.height = '140px'; area.value = initialData;
                 const btn = document.createElement('button'); btn.className = 'b-big'; btn.innerText = 'SAVE ' + title;
                 btn.onclick = () => {
                     try {
@@ -139,74 +134,75 @@
                 };
                 cnt.appendChild(label); cnt.appendChild(area); cnt.appendChild(btn);
             };
-
             createSection('LOCAL STORAGE', 'ed_ls', getJ(localStorage), (d) => { localStorage.clear(); Object.keys(d).forEach(k=>localStorage.setItem(k,d[k])); });
             createSection('SESSION STORAGE', 'ed_ss', getJ(sessionStorage), (d) => { sessionStorage.clear(); Object.keys(d).forEach(k=>sessionStorage.setItem(k,d[k])); });
         }
 
         if (target === 'files') {
             cnt.innerHTML = '<i style="color:#666">Scanning Cache Storage...</i>';
-            const keys = await caches.keys();
-            cnt.innerHTML = keys.length ? '' : 'No cache storage found.';
-            
-            for (const k of keys) {
-                const openCache = await caches.open(k);
-                const items = await openCache.keys();
-                const section = document.createElement('div');
-                section.style.marginBottom = '20px';
-                section.innerHTML = `<div style="background:#222;padding:8px;color:#00ff41;font-size:11px;display:flex;justify-content:space-between">📂 ${k} <span>[${items.length}]</span></div>`;
+            try {
+                const keys = await caches.keys();
+                cnt.innerHTML = keys.length ? '' : 'No cache storage found.';
                 
-                const list = document.createElement('div');
-                list.style.display = items.length > 15 ? 'none' : 'block';
-                
-                if (items.length > 15) {
-                    const btnShow = document.createElement('button');
-                    btnShow.className = 'sm-btn'; btnShow.style.width = '100%'; btnShow.style.margin = '5px 0';
-                    btnShow.innerText = 'Expand ' + items.length + ' files';
-                    btnShow.onclick = () => { list.style.display = 'block'; btnShow.remove(); };
-                    section.appendChild(btnShow);
+                for (const k of keys) {
+                    const openCache = await caches.open(k);
+                    const items = await openCache.keys();
+                    const section = document.createElement('div');
+                    section.style.marginBottom = '20px';
+                    section.innerHTML = `<div style="background:#222;padding:8px;color:#00ff41;font-size:11px;display:flex;justify-content:space-between">📂 ${k} <span>[${items.length}]</span></div>`;
+                    
+                    const list = document.createElement('div');
+                    list.style.display = items.length > 15 ? 'none' : 'block';
+                    
+                    if (items.length > 15) {
+                        const btnShow = document.createElement('button');
+                        btnShow.className = 'sm-btn'; btnShow.style.width = '100%'; btnShow.style.margin = '5px 0';
+                        btnShow.innerText = 'Expand ' + items.length + ' files';
+                        btnShow.onclick = () => { list.style.display = 'block'; btnShow.remove(); };
+                        section.appendChild(btnShow);
+                    }
+
+                    items.forEach(req => {
+                        const row = document.createElement('div');
+                        row.className = 'row-item';
+                        const fileName = req.url.split('/').pop().split('?')[0] || 'index.html';
+                        row.innerHTML = `<span style="font-size:10px;word-break:break-all;margin-right:10px;">${fileName}</span>`;
+                        
+                        const acts = document.createElement('div');
+                        acts.style.display = 'flex';
+                        
+                        const btnDl = document.createElement('button'); btnDl.className='sm-btn'; btnDl.innerText = '⬇️';
+                        btnDl.onclick = async () => {
+                            try {
+                                const r = await openCache.match(req.url);
+                                const b = await r.blob();
+                                downloadBlob(b, fileName);
+                            } catch(e) { alert('Download failed: ' + e); }
+                        };
+                        
+                        const btnUp = document.createElement('button'); btnUp.className='sm-btn'; btnUp.innerText = '✏️';
+                        btnUp.onclick = () => {
+                            const i = document.createElement('input'); i.type = 'file';
+                            i.onchange = async () => {
+                                if(!i.files[0]) return;
+                                const f = i.files[0];
+                                await openCache.put(req.url, new Response(f, {headers: {'Content-Type': f.type || 'application/octet-stream'}}));
+                                alert('File replaced in cache!');
+                            }; i.click();
+                        };
+
+                        acts.appendChild(btnDl); acts.appendChild(btnUp);
+                        row.appendChild(acts);
+                        list.appendChild(row);
+                    });
+                    section.appendChild(list);
+                    cnt.appendChild(section);
                 }
-
-                items.forEach(req => {
-                    const row = document.createElement('div');
-                    row.className = 'row-item';
-                    const fileName = req.url.split('/').pop().split('?')[0] || 'index.html';
-                    row.innerHTML = `<span style="font-size:10px;word-break:break-all;margin-right:10px;">${fileName}</span>`;
-                    
-                    const acts = document.createElement('div');
-                    acts.style.display = 'flex';
-                    
-                    const btnDl = document.createElement('button'); btnDl.className='sm-btn'; btnDl.innerText = '⬇️';
-                    btnDl.onclick = async () => {
-                        try {
-                            const r = await openCache.match(req.url);
-                            const b = await r.blob();
-                            downloadBlob(b, fileName);
-                        } catch(e) { alert('Download failed: ' + e); }
-                    };
-                    
-                    const btnUp = document.createElement('button'); btnUp.className='sm-btn'; btnUp.innerText = '✏️';
-                    btnUp.onclick = () => {
-                        const i = document.createElement('input'); i.type = 'file';
-                        i.onchange = async () => {
-                            if(!i.files[0]) return;
-                            const f = i.files[0];
-                            await openCache.put(req.url, new Response(f, {headers: {'Content-Type': f.type || 'application/octet-stream'}}));
-                            alert('File replaced in cache!');
-                        }; i.click();
-                    };
-
-                    acts.appendChild(btnDl); acts.appendChild(btnUp);
-                    row.appendChild(acts);
-                    list.appendChild(row);
-                });
-                section.appendChild(list);
-                cnt.appendChild(section);
-            }
+            } catch(e) { cnt.innerHTML = 'Cache Access Error: ' + e.message; }
         }
 
         if (target === 'db') {
-            if (!indexedDB.databases) { cnt.innerHTML = 'IndexedDB.databases() not supported.'; return; }
+            if (!indexedDB.databases) { cnt.innerHTML = 'IndexedDB API not fully supported.'; return; }
             const dbs = await indexedDB.databases();
             cnt.innerHTML = dbs.length ? '' : 'No Databases.';
             
@@ -226,19 +222,23 @@
                         
                         const btnDiv = document.createElement('div');
                         
-                        // EXPORT BUTTON
                         const btnEx = document.createElement('button'); btnEx.className='sm-btn'; btnEx.innerText = 'EXPORT';
                         btnEx.onclick = () => {
-                            const tx = db.transaction(storeName, 'readonly');
-                            const store = tx.objectStore(storeName);
-                            store.getAll().onsuccess = (ev) => {
-                                const dataStr = JSON.stringify(ev.target.result, null, 2);
-                                const blob = new Blob([dataStr], {type:'application/json'});
-                                downloadBlob(blob, `${dbInfo.name}_${storeName}.json`);
-                            };
+                            try {
+                                const tx = db.transaction(storeName, 'readonly');
+                                const store = tx.objectStore(storeName);
+                                const req = store.getAll();
+                                req.onsuccess = (ev) => {
+                                    const res = ev.target.result;
+                                    if (!res) { alert('No data to export'); return; }
+                                    const jsonStr = JSON.stringify(res, null, 2);
+                                    const blob = new Blob([jsonStr], {type:'application/json'});
+                                    downloadBlob(blob, `${dbInfo.name}_${storeName}.json`);
+                                };
+                                req.onerror = (err) => alert('Export Read Error: ' + err.target.error);
+                            } catch(err) { alert('Export Init Error: ' + err.message); }
                         };
                         
-                        // IMPORT BUTTON
                         const btnIm = document.createElement('button'); btnIm.className='sm-btn'; btnIm.innerText = '✏️ IMPORT';
                         btnIm.onclick = () => {
                              const i = document.createElement('input'); i.type = 'file';
@@ -249,22 +249,15 @@
                                  reader.onload = (res) => {
                                      try {
                                          const jsonData = JSON.parse(res.target.result);
-                                         if(!Array.isArray(jsonData)) throw new Error('JSON must be an array of objects');
-                                         
+                                         if(!Array.isArray(jsonData)) throw new Error('File must be a JSON Array');
                                          const tx = db.transaction(storeName, 'readwrite');
                                          const store = tx.objectStore(storeName);
-                                         
-                                         // Очищаем и перезаписываем
                                          const clr = store.clear();
                                          clr.onsuccess = () => {
-                                             let count = 0;
-                                             jsonData.forEach(item => {
-                                                 store.put(item);
-                                                 count++;
-                                             });
-                                             alert(`Imported ${count} items to ${storeName}`);
+                                             jsonData.forEach(item => store.put(item));
+                                             alert(`Imported ${jsonData.length} items to ${storeName}`);
                                          };
-                                         clr.onerror = (err) => alert('Clear failed: ' + err);
+                                         clr.onerror = (err) => alert('Clear failed: ' + err.target.error);
                                      } catch(err) { alert('Import error: ' + err.message); }
                                  };
                                  reader.readAsText(f);
@@ -277,8 +270,8 @@
                         row.appendChild(btnDiv);
                         box.appendChild(row);
                     });
-                    db.close();
                 };
+                openReq.onerror = () => { box.innerHTML += '<span style="color:red"> Access Denied</span>'; };
                 cnt.appendChild(box);
             }
         }
@@ -301,7 +294,6 @@
         }
     };
 
-    // TAB SWITCH LOGIC
     ui.querySelectorAll('.mtl-tab').forEach(tab => {
         tab.onclick = () => {
             ui.querySelectorAll('.mtl-tab').forEach(t => t.classList.remove('active-tab'));
@@ -310,6 +302,5 @@
         };
     });
 
-    // START
     show('main');
 })();
