@@ -49,7 +49,7 @@
 
     ui.innerHTML = `
         <div style="background:#111;padding:12px;display:flex;justify-content:space-between;border-bottom:1px solid #00ff41;flex-shrink:0;align-items:center;">
-            <b style="letter-spacing:1px;font-size:14px;">TOOLKIT V6.7</b>
+            <b style="letter-spacing:1px;font-size:14px;">TOOLKIT V6.8</b>
             <button id="close_mtl" style="background:#400;color:#f00;border:1px solid #f00;padding:4px 12px;font-weight:bold;border-radius:3px;">CLOSE</button>
         </div>
         <div style="display:flex;background:#000;overflow-x:auto;border-bottom:1px solid #222;flex-shrink:0;">
@@ -66,24 +66,35 @@
     ui.querySelector('#close_mtl').onclick = () => host.remove();
     const cnt = ui.querySelector('#mtl_cnt');
 
-    // --- DOWNLOAD FIX (OCTET-STREAM FORCE) ---
-    const downloadBlob = (blob, name) => {
+    // --- ULTIMATE DOWNLOAD FIX ---
+    const downloadRaw = (data, name) => {
         try {
-            // Принудительно меняем тип на binary, чтобы браузер не пытался открыть файл
-            const forcedBlob = new Blob([blob], { type: 'application/octet-stream' });
-            const url = URL.createObjectURL(forcedBlob);
+            // 1. Создаем Blob с принудительным типом octet-stream
+            const blob = new Blob([data], { type: 'application/octet-stream' });
             
+            // 2. Создаем URL
+            const url = URL.createObjectURL(blob);
+            
+            // 3. Создаем ссылку ВНЕ Shadow DOM
             const a = document.createElement('a');
             a.href = url;
             a.download = name;
             a.style.display = 'none';
             document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
             
-            setTimeout(() => URL.revokeObjectURL(url), 60000);
+            // 4. Кликаем
+            a.click();
+            
+            // 5. Очищаем ОЧЕНЬ нескоро (3 минуты), чтобы Android успел забрать поток
+            setTimeout(() => {
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+            }, 180000); 
+            
+            return true;
         } catch(e) {
-            alert('Download Error: ' + e.message);
+            alert('Save Error: ' + e.message);
+            return false;
         }
     };
 
@@ -179,9 +190,9 @@
                         btnDl.onclick = async () => {
                             try {
                                 const r = await openCache.match(req.url);
-                                const b = await r.blob();
-                                // Передаем blob в нашу новую функцию, которая принудительно меняет тип
-                                downloadBlob(b, fileName);
+                                // ВАЖНО: Читаем как ArrayBuffer, чтобы сбросить MIME-тип
+                                const buf = await r.arrayBuffer(); 
+                                downloadRaw(buf, fileName);
                             } catch(e) { alert('Download failed: ' + e); }
                         };
                         
@@ -236,10 +247,9 @@
                                 req.onsuccess = (ev) => {
                                     const res = ev.target.result;
                                     if (!res) { alert('No data to export'); return; }
+                                    // Конвертируем в JSON строку, а потом скачиваем
                                     const jsonStr = JSON.stringify(res, null, 2);
-                                    // Здесь тоже меняем тип на octet-stream, чтобы JSON скачался, а не открылся
-                                    const blob = new Blob([jsonStr], {type:'application/octet-stream'});
-                                    downloadBlob(blob, `${dbInfo.name}_${storeName}.json`);
+                                    downloadRaw(jsonStr, `${dbInfo.name}_${storeName}.json`);
                                 };
                                 req.onerror = (err) => alert('Export Read Error: ' + err.target.error);
                             } catch(err) { alert('Export Init Error: ' + err.message); }
