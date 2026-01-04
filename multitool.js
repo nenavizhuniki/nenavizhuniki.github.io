@@ -49,7 +49,7 @@
 
     ui.innerHTML = `
         <div style="background:#111;padding:12px;display:flex;justify-content:space-between;border-bottom:1px solid #00ff41;flex-shrink:0;align-items:center;">
-            <b style="letter-spacing:1px;font-size:14px;">TOOLKIT V6.6</b>
+            <b style="letter-spacing:1px;font-size:14px;">TOOLKIT V6.7</b>
             <button id="close_mtl" style="background:#400;color:#f00;border:1px solid #f00;padding:4px 12px;font-weight:bold;border-radius:3px;">CLOSE</button>
         </div>
         <div style="display:flex;background:#000;overflow-x:auto;border-bottom:1px solid #222;flex-shrink:0;">
@@ -66,17 +66,21 @@
     ui.querySelector('#close_mtl').onclick = () => host.remove();
     const cnt = ui.querySelector('#mtl_cnt');
 
-    // --- DOWNLOAD FIX ---
+    // --- DOWNLOAD FIX (OCTET-STREAM FORCE) ---
     const downloadBlob = (blob, name) => {
         try {
-            const url = URL.createObjectURL(blob);
+            // Принудительно меняем тип на binary, чтобы браузер не пытался открыть файл
+            const forcedBlob = new Blob([blob], { type: 'application/octet-stream' });
+            const url = URL.createObjectURL(forcedBlob);
+            
             const a = document.createElement('a');
             a.href = url;
             a.download = name;
+            a.style.display = 'none';
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
-            // Ждем минуту перед удалением ссылки из памяти, чтобы мобильный хром успел подхватить поток
+            
             setTimeout(() => URL.revokeObjectURL(url), 60000);
         } catch(e) {
             alert('Download Error: ' + e.message);
@@ -176,6 +180,7 @@
                             try {
                                 const r = await openCache.match(req.url);
                                 const b = await r.blob();
+                                // Передаем blob в нашу новую функцию, которая принудительно меняет тип
                                 downloadBlob(b, fileName);
                             } catch(e) { alert('Download failed: ' + e); }
                         };
@@ -232,7 +237,8 @@
                                     const res = ev.target.result;
                                     if (!res) { alert('No data to export'); return; }
                                     const jsonStr = JSON.stringify(res, null, 2);
-                                    const blob = new Blob([jsonStr], {type:'application/json'});
+                                    // Здесь тоже меняем тип на octet-stream, чтобы JSON скачался, а не открылся
+                                    const blob = new Blob([jsonStr], {type:'application/octet-stream'});
                                     downloadBlob(blob, `${dbInfo.name}_${storeName}.json`);
                                 };
                                 req.onerror = (err) => alert('Export Read Error: ' + err.target.error);
