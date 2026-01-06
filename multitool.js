@@ -44,12 +44,15 @@
         .row-item { display:flex; justify-content:space-between; align-items:center; padding:8px; border:1px solid #222; margin-bottom:5px; border-radius:4px; background:#0a0a0a; }
         button.sm-btn { background:#222; color:#0f0; border:1px solid #444; padding:5px 8px; font-size:12px; margin-left:5px; border-radius:3px; }
         button.sm-btn:active { background:#0f0; color:#000; }
+        .f-meta { font-size: 9px; color: #888; display: block; margin-top: 2px; }
+        .sz-tag { color: #ffeb3b; font-weight: bold; }
+        .opaque-tag { color: #ff5555; font-weight: bold; }
     `;
     shadow.appendChild(style);
 
     ui.innerHTML = `
         <div style="background:#111;padding:12px;display:flex;justify-content:space-between;border-bottom:1px solid #00ff41;flex-shrink:0;align-items:center;">
-            <b style="letter-spacing:1px;font-size:14px;">TOOLKIT V6.8</b>
+            <b style="letter-spacing:1px;font-size:14px;">TOOLKIT V6.9</b>
             <button id="close_mtl" style="background:#400;color:#f00;border:1px solid #f00;padding:4px 12px;font-weight:bold;border-radius:3px;">CLOSE</button>
         </div>
         <div style="display:flex;background:#000;overflow-x:auto;border-bottom:1px solid #222;flex-shrink:0;">
@@ -66,31 +69,24 @@
     ui.querySelector('#close_mtl').onclick = () => host.remove();
     const cnt = ui.querySelector('#mtl_cnt');
 
-    // --- ULTIMATE DOWNLOAD FIX ---
+    // --- UTILS ---
+    const fmtSz = (b) => {
+        if(b===0) return '0 B';
+        const k=1024, s=['B','KB','MB','GB'], i=Math.floor(Math.log(b)/Math.log(k));
+        return parseFloat((b/Math.pow(k,i)).toFixed(2))+' '+s[i];
+    };
+
     const downloadRaw = (data, name) => {
         try {
-            // 1. Создаем Blob с принудительным типом octet-stream
             const blob = new Blob([data], { type: 'application/octet-stream' });
-            
-            // 2. Создаем URL
             const url = URL.createObjectURL(blob);
-            
-            // 3. Создаем ссылку ВНЕ Shadow DOM
             const a = document.createElement('a');
             a.href = url;
             a.download = name;
             a.style.display = 'none';
             document.body.appendChild(a);
-            
-            // 4. Кликаем
             a.click();
-            
-            // 5. Очищаем ОЧЕНЬ нескоро (3 минуты), чтобы Android успел забрать поток
-            setTimeout(() => {
-                document.body.removeChild(a);
-                window.URL.revokeObjectURL(url);
-            }, 180000); 
-            
+            setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); }, 180000); 
             return true;
         } catch(e) {
             alert('Save Error: ' + e.message);
@@ -154,22 +150,53 @@
         }
 
         if (target === 'files') {
-            cnt.innerHTML = '<i style="color:#666">Scanning Cache Storage...</i>';
+            cnt.innerHTML = '<i style="color:#666">Estimating Storage...</i>';
             try {
+                // GLOBAL STORAGE USAGE
+                if (navigator.storage && navigator.storage.estimate) {
+                    const est = await navigator.storage.estimate();
+                    const usage = fmtSz(est.usage || 0);
+                    const quota = fmtSz(est.quota || 0);
+                    const header = document.createElement('div');
+                    header.style.cssText = 'padding:10px;background:#111;margin-bottom:15px;border:1px solid #444;font-size:12px;';
+                    header.innerHTML = `<b>💾 GLOBAL USAGE:</b> <span style="color:#ffeb3b">${usage}</span> <span style="color:#666">/ ${quota}</span>`;
+                    cnt.innerHTML = '';
+                    cnt.appendChild(header);
+                } else {
+                    cnt.innerHTML = '';
+                }
+
                 const keys = await caches.keys();
-                cnt.innerHTML = keys.length ? '' : 'No cache storage found.';
+                if (!keys.length) cnt.innerHTML += 'No cache storage found.';
                 
                 for (const k of keys) {
                     const openCache = await caches.open(k);
                     const items = await openCache.keys();
+                    
                     const section = document.createElement('div');
                     section.style.marginBottom = '20px';
-                    section.innerHTML = `<div style="background:#222;padding:8px;color:#00ff41;font-size:11px;display:flex;justify-content:space-between">📂 ${k} <span>[${items.length}]</span></div>`;
+                    // Header with CALC button
+                    const headRow = document.createElement('div');
+                    headRow.style.cssText = "background:#222;padding:8px;color:#00ff41;font-size:11px;display:flex;justify-content:space-between;align-items:center;";
+                    headRow.innerHTML = `<span>📂 ${k} [${items.length}]</span>`;
+                    
+                    const btnCalc = document.createElement('button');
+                    btnCalc.className = 'sm-btn';
+                    btnCalc.style.background = '#444';
+                    btnCalc.innerText = '📊 CALC SIZES';
+                    
+                    headRow.appendChild(btnCalc);
+                    section.appendChild(headRow);
+
+                    // Stats output
+                    const statsDiv = document.createElement('div');
+                    statsDiv.style.cssText = "padding:5px;font-size:10px;color:#888;border-bottom:1px solid #333;display:none;";
+                    section.appendChild(statsDiv);
                     
                     const list = document.createElement('div');
-                    list.style.display = items.length > 15 ? 'none' : 'block';
+                    list.style.display = items.length > 10 ? 'none' : 'block';
                     
-                    if (items.length > 15) {
+                    if (items.length > 10) {
                         const btnShow = document.createElement('button');
                         btnShow.className = 'sm-btn'; btnShow.style.width = '100%'; btnShow.style.margin = '5px 0';
                         btnShow.innerText = 'Expand ' + items.length + ' files';
@@ -177,11 +204,51 @@
                         section.appendChild(btnShow);
                     }
 
-                    items.forEach(req => {
+                    // Logic for calculating sizes
+                    btnCalc.onclick = async () => {
+                        btnCalc.innerText = '⏳ ...';
+                        let totalSz = 0;
+                        let opaqueCnt = 0;
+                        
+                        for (let i = 0; i < items.length; i++) {
+                            const req = items[i];
+                            const rowId = `r-${k.replace(/\W/g,'')}-${i}`;
+                            const metaEl = shadow.getElementById(rowId); // look inside shadow
+                            
+                            try {
+                                const r = await openCache.match(req);
+                                let szText = '';
+                                
+                                if (r.type === 'opaque') {
+                                    opaqueCnt++;
+                                    szText = '<span class="opaque-tag">[OPAQUE (~7MB Quota)]</span>';
+                                } else {
+                                    const b = await r.blob();
+                                    totalSz += b.size;
+                                    szText = `<span class="sz-tag">${fmtSz(b.size)}</span>`;
+                                }
+                                
+                                if (metaEl) metaEl.innerHTML = szText;
+                            } catch(e) {}
+                        }
+                        
+                        btnCalc.innerText = 'DONE';
+                        statsDiv.style.display = 'block';
+                        statsDiv.innerHTML = `REAL SIZE: <b style="color:#fff">${fmtSz(totalSz)}</b> | OPAQUE FILES: <b style="color:#ff5555">${opaqueCnt}</b> (Huge Quota Usage)`;
+                    };
+
+                    items.forEach((req, idx) => {
                         const row = document.createElement('div');
                         row.className = 'row-item';
                         const fileName = req.url.split('/').pop().split('?')[0] || 'index.html';
-                        row.innerHTML = `<span style="font-size:10px;word-break:break-all;margin-right:10px;">${fileName}</span>`;
+                        const rowId = `r-${k.replace(/\W/g,'')}-${idx}`;
+                        
+                        row.innerHTML = `
+                            <div style="flex:1;overflow:hidden;margin-right:10px;">
+                                <span style="font-size:11px;word-break:break-all;">${fileName}</span>
+                                <span id="${rowId}" class="f-meta">Size: ?</span>
+                            </div>
+                        `;
                         
                         const acts = document.createElement('div');
                         acts.style.display = 'flex';
@@ -190,7 +257,6 @@
                         btnDl.onclick = async () => {
                             try {
                                 const r = await openCache.match(req.url);
-                                // ВАЖНО: Читаем как ArrayBuffer, чтобы сбросить MIME-тип
                                 const buf = await r.arrayBuffer(); 
                                 downloadRaw(buf, fileName);
                             } catch(e) { alert('Download failed: ' + e); }
@@ -203,7 +269,7 @@
                                 if(!i.files[0]) return;
                                 const f = i.files[0];
                                 await openCache.put(req.url, new Response(f, {headers: {'Content-Type': f.type || 'application/octet-stream'}}));
-                                alert('File replaced in cache!');
+                                alert('File replaced!');
                             }; i.click();
                         };
 
@@ -247,7 +313,6 @@
                                 req.onsuccess = (ev) => {
                                     const res = ev.target.result;
                                     if (!res) { alert('No data to export'); return; }
-                                    // Конвертируем в JSON строку, а потом скачиваем
                                     const jsonStr = JSON.stringify(res, null, 2);
                                     downloadRaw(jsonStr, `${dbInfo.name}_${storeName}.json`);
                                 };
