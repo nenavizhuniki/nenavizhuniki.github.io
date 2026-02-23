@@ -40,19 +40,27 @@
         .b-big { background:#111; color:#00ff41; border:1px solid #333; padding:15px 5px; font-family:monospace; cursor:pointer; font-size:11px; font-weight:bold; width:100%; display:flex; align-items:center; justify-content:center; }
         .b-big:active { background:#00ff41; color:#000; }
         .label-txt { color:#888; font-size:10px; margin: 15px 0 5px 0; display:block; font-weight:bold; }
-        .editor-area { width:100%; background:#101010; color:#0f0; border:1px solid #333; border-left: 3px solid #00ff41; font-family:'Courier New', monospace; font-size:11px; padding:10px; margin-bottom:5px; outline:none; }
+        .editor-area { width:100%; background:transparent; color:#0f0; border:none; font-family:'Courier New', monospace; font-size:11px; padding:10px; outline:none; resize:none; white-space:pre; overflow:auto; flex:1; }
         .row-item { display:flex; justify-content:space-between; align-items:center; padding:8px; border:1px solid #222; margin-bottom:5px; border-radius:4px; background:#0a0a0a; }
         button.sm-btn { background:#222; color:#0f0; border:1px solid #444; padding:5px 8px; font-size:12px; margin-left:5px; border-radius:3px; }
         button.sm-btn:active { background:#0f0; color:#000; }
         .f-meta { font-size: 9px; color: #888; display: block; margin-top: 2px; }
         .sz-tag { color: #ffeb3b; font-weight: bold; }
         .opaque-tag { color: #ff5555; font-weight: bold; }
+        
+        /* NEW EDITOR STYLES */
+        .ed-wrap { display:flex; flex-direction:column; background:#101010; border:1px solid #333; margin-bottom:5px; position:relative; }
+        .ed-wrap.fs { position:fixed; top:0; left:0; width:100%; height:100% !important; z-index:999999; margin:0; background:#050505; }
+        .ed-header { background:#1a1a1a; padding:5px 10px; display:none; justify-content:space-between; align-items:center; border-bottom:1px solid #333; }
+        .ed-wrap.fs .ed-header { display:flex; }
+        .ed-body { display:flex; flex:1; overflow:hidden; }
+        .ed-lines { width:35px; background:#111; color:#555; text-align:right; padding:10px 5px; font-family:monospace; font-size:11px; overflow:hidden; user-select:none; border-right:1px solid #333; }
     `;
     shadow.appendChild(style);
 
     ui.innerHTML = `
         <div style="background:#111;padding:12px;display:flex;justify-content:space-between;border-bottom:1px solid #00ff41;flex-shrink:0;align-items:center;">
-            <b style="letter-spacing:1px;font-size:14px;">TOOLKIT V6.9</b>
+            <b style="letter-spacing:1px;font-size:14px;">TOOLKIT V6.9.1</b>
             <button id="close_mtl" style="background:#400;color:#f00;border:1px solid #f00;padding:4px 12px;font-weight:bold;border-radius:3px;">CLOSE</button>
         </div>
         <div style="display:flex;background:#000;overflow-x:auto;border-bottom:1px solid #222;flex-shrink:0;">
@@ -131,11 +139,90 @@
 
         if (target === 'data') {
             const getJ = (s) => { let o={}; Object.keys(s).sort().forEach(k=>o[k]=s.getItem(k)); return JSON.stringify(o,null,2); };
+            
+            // --- COOKIES LOGIC ---
+            const getCookies = () => {
+                if(!document.cookie) return "{}";
+                const c = {};
+                document.cookie.split(';').forEach(p => {
+                    const parts = p.split('=');
+                    if(parts.length > 0) c[parts[0].trim()] = parts.slice(1).join('=').trim();
+                });
+                return JSON.stringify(c, null, 2);
+            };
+            
+            const saveCookies = (d) => {
+                const old = JSON.parse(getCookies());
+                for(let k in old) { // Удаляем ключи, которых больше нет
+                    if(!(k in d)) document.cookie = `${k}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
+                }
+                for(let k in d) { // Обновляем/добавляем
+                    document.cookie = `${k}=${d[k]}; path=/`;
+                }
+            };
+
             const createSection = (title, id, initialData, saveFn) => {
-                const label = document.createElement('span'); label.className = 'label-txt'; label.innerText = title;
-                const area = document.createElement('textarea'); area.id = id; area.className = 'editor-area'; area.style.height = '140px'; area.value = initialData;
-                const btn = document.createElement('button'); btn.className = 'b-big'; btn.innerText = 'SAVE ' + title;
-                btn.onclick = () => {
+                const sec = document.createElement('div');
+                sec.style.marginBottom = '20px';
+                
+                // Заголовок и кнопка FS
+                const headRow = document.createElement('div');
+                headRow.style.cssText = 'display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;';
+                headRow.innerHTML = `<span class="label-txt" style="margin:0;">${title}</span>`;
+                
+                const btnFs = document.createElement('button');
+                btnFs.className = 'sm-btn'; btnFs.innerHTML = '⛶ FS';
+                headRow.appendChild(btnFs);
+
+                // Обертка редактора
+                const edWrap = document.createElement('div');
+                edWrap.className = 'ed-wrap'; edWrap.style.height = '160px';
+                
+                // Хедер для FS режима
+                const fsHeader = document.createElement('div');
+                fsHeader.className = 'ed-header';
+                fsHeader.innerHTML = `<b style="color:#00ff41;">${title} EDITOR</b>`;
+                const btnCloseFs = document.createElement('button');
+                btnCloseFs.className = 'sm-btn'; btnCloseFs.style.background = '#400'; btnCloseFs.style.borderColor = '#f00'; btnCloseFs.innerText = '✖ CLOSE';
+                fsHeader.appendChild(btnCloseFs);
+                edWrap.appendChild(fsHeader);
+
+                // Тело редактора (цифры + поле)
+                const edBody = document.createElement('div');
+                edBody.className = 'ed-body';
+                
+                const lines = document.createElement('div');
+                lines.className = 'ed-lines';
+                
+                const area = document.createElement('textarea');
+                area.id = id; area.className = 'editor-area'; area.value = initialData;
+                area.setAttribute('spellcheck', 'false'); area.setAttribute('autocorrect', 'off'); area.setAttribute('autocapitalize', 'off');
+                
+                edBody.appendChild(lines);
+                edBody.appendChild(area);
+                edWrap.appendChild(edBody);
+
+                // Синхронизация строк
+                const updateLines = () => {
+                    const count = area.value.split('\\n').length;
+                    lines.innerHTML = Array(count).fill(0).map((_, i) => i + 1).join('<br>');
+                };
+                area.addEventListener('input', updateLines);
+                area.addEventListener('scroll', () => { lines.scrollTop = area.scrollTop; });
+                updateLines(); // init
+
+                // Логика FS
+                const toggleFs = () => {
+                    edWrap.classList.toggle('fs');
+                    updateLines(); // Пересчет при ресайзе
+                };
+                btnFs.onclick = toggleFs;
+                btnCloseFs.onclick = toggleFs;
+
+                // Кнопка сохранения
+                const btnSave = document.createElement('button');
+                btnSave.className = 'b-big'; btnSave.innerText = 'SAVE ' + title;
+                btnSave.onclick = () => {
                     try {
                         const data = JSON.parse(area.value);
                         saveFn(data);
@@ -143,8 +230,14 @@
                         location.reload();
                     } catch(e) { alert('JSON Error: ' + e.message); }
                 };
-                cnt.appendChild(label); cnt.appendChild(area); cnt.appendChild(btn);
+
+                sec.appendChild(headRow);
+                sec.appendChild(edWrap);
+                sec.appendChild(btnSave);
+                cnt.appendChild(sec);
             };
+
+            createSection('COOKIES', 'ed_ck', getCookies(), saveCookies);
             createSection('LOCAL STORAGE', 'ed_ls', getJ(localStorage), (d) => { localStorage.clear(); Object.keys(d).forEach(k=>localStorage.setItem(k,d[k])); });
             createSection('SESSION STORAGE', 'ed_ss', getJ(sessionStorage), (d) => { sessionStorage.clear(); Object.keys(d).forEach(k=>sessionStorage.setItem(k,d[k])); });
         }
@@ -159,7 +252,7 @@
                     const quota = fmtSz(est.quota || 0);
                     const header = document.createElement('div');
                     header.style.cssText = 'padding:10px;background:#111;margin-bottom:15px;border:1px solid #444;font-size:12px;';
-                    header.innerHTML = `<b>💾 GLOBAL USAGE:</b> <span style="color:#ffeb3b">${usage}</span> <span style="color:#666">/ ${quota}</span>`;
+                    header.innerHTML = `<b>💾 GLOBAL USAGE:</b> <span style="color:#ffeb3b">\${usage}</span> <span style="color:#666">/ \${quota}</span>`;
                     cnt.innerHTML = '';
                     cnt.appendChild(header);
                 } else {
@@ -178,7 +271,7 @@
                     // Header with CALC button
                     const headRow = document.createElement('div');
                     headRow.style.cssText = "background:#222;padding:8px;color:#00ff41;font-size:11px;display:flex;justify-content:space-between;align-items:center;";
-                    headRow.innerHTML = `<span>📂 ${k} [${items.length}]</span>`;
+                    headRow.innerHTML = `<span>📂 \${k} [\${items.length}]</span>`;
                     
                     const btnCalc = document.createElement('button');
                     btnCalc.className = 'sm-btn';
@@ -212,7 +305,7 @@
                         
                         for (let i = 0; i < items.length; i++) {
                             const req = items[i];
-                            const rowId = `r-${k.replace(/\W/g,'')}-${i}`;
+                            const rowId = \`r-\${k.replace(/\\W/g,'')}-\${i}\`;
                             const metaEl = shadow.getElementById(rowId); // look inside shadow
                             
                             try {
@@ -225,7 +318,7 @@
                                 } else {
                                     const b = await r.blob();
                                     totalSz += b.size;
-                                    szText = `<span class="sz-tag">${fmtSz(b.size)}</span>`;
+                                    szText = \`<span class="sz-tag">\${fmtSz(b.size)}</span>\`;
                                 }
                                 
                                 if (metaEl) metaEl.innerHTML = szText;
@@ -234,21 +327,21 @@
                         
                         btnCalc.innerText = 'DONE';
                         statsDiv.style.display = 'block';
-                        statsDiv.innerHTML = `REAL SIZE: <b style="color:#fff">${fmtSz(totalSz)}</b> | OPAQUE FILES: <b style="color:#ff5555">${opaqueCnt}</b> (Huge Quota Usage)`;
+                        statsDiv.innerHTML = \`REAL SIZE: <b style="color:#fff">\${fmtSz(totalSz)}</b> | OPAQUE FILES: <b style="color:#ff5555">\${opaqueCnt}</b> (Huge Quota Usage)\`;
                     };
 
                     items.forEach((req, idx) => {
                         const row = document.createElement('div');
                         row.className = 'row-item';
                         const fileName = req.url.split('/').pop().split('?')[0] || 'index.html';
-                        const rowId = `r-${k.replace(/\W/g,'')}-${idx}`;
+                        const rowId = \`r-\${k.replace(/\\W/g,'')}-\${idx}\`;
                         
-                        row.innerHTML = `
+                        row.innerHTML = \`
                             <div style="flex:1;overflow:hidden;margin-right:10px;">
-                                <span style="font-size:11px;word-break:break-all;">${fileName}</span>
-                                <span id="${rowId}" class="f-meta">Size: ?</span>
+                                <span style="font-size:11px;word-break:break-all;">\${fileName}</span>
+                                <span id="\${rowId}" class="f-meta">Size: ?</span>
                             </div>
-                        `;
+                        \`;
                         
                         const acts = document.createElement('div');
                         acts.style.display = 'flex';
@@ -291,7 +384,7 @@
             for (const dbInfo of dbs) {
                 const box = document.createElement('div');
                 box.style.background = '#111'; box.style.padding = '10px'; box.style.marginBottom = '10px'; box.style.border = '1px solid #333';
-                box.innerHTML = `<b style="color:#00ff41;font-size:12px;">🗄️ ${dbInfo.name}</b><br>`;
+                box.innerHTML = \`<b style="color:#00ff41;font-size:12px;">🗄️ \${dbInfo.name}</b><br>\`;
                 
                 const openReq = indexedDB.open(dbInfo.name);
                 openReq.onsuccess = (e) => {
@@ -300,7 +393,7 @@
                     Array.from(db.objectStoreNames).forEach(storeName => {
                         const row = document.createElement('div');
                         row.className = 'row-item'; row.style.marginTop = '5px';
-                        row.innerHTML = `<span style="color:#aaa;font-size:11px;">${storeName}</span>`;
+                        row.innerHTML = \`<span style="color:#aaa;font-size:11px;">\${storeName}</span>\`;
                         
                         const btnDiv = document.createElement('div');
                         
@@ -314,7 +407,7 @@
                                     const res = ev.target.result;
                                     if (!res) { alert('No data to export'); return; }
                                     const jsonStr = JSON.stringify(res, null, 2);
-                                    downloadRaw(jsonStr, `${dbInfo.name}_${storeName}.json`);
+                                    downloadRaw(jsonStr, \`\${dbInfo.name}_\${storeName}.json\`);
                                 };
                                 req.onerror = (err) => alert('Export Read Error: ' + err.target.error);
                             } catch(err) { alert('Export Init Error: ' + err.message); }
@@ -336,7 +429,7 @@
                                          const clr = store.clear();
                                          clr.onsuccess = () => {
                                              jsonData.forEach(item => store.put(item));
-                                             alert(`Imported ${jsonData.length} items to ${storeName}`);
+                                             alert(\`Imported \${jsonData.length} items to \${storeName}\`);
                                          };
                                          clr.onerror = (err) => alert('Clear failed: ' + err.target.error);
                                      } catch(err) { alert('Import error: ' + err.message); }
@@ -368,7 +461,7 @@
                 const el = document.createElement('div');
                 el.style.cssText = 'border-bottom:1px solid #111;padding:6px 0;font-size:10px;word-break:break-all;';
                 el.style.color = l.t === 'ERR' ? '#ff4444' : '#00ff41';
-                el.innerText = `[${l.time}] ${l.m}`;
+                el.innerText = \`[\${l.time}] \${l.m}\`;
                 logBox.appendChild(el);
             });
             cnt.appendChild(logBox);
