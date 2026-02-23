@@ -48,9 +48,8 @@
         .sz-tag { color: #ffeb3b; font-weight: bold; }
         .opaque-tag { color: #ff5555; font-weight: bold; }
         
-        /* NEW EDITOR STYLES */
         .ed-wrap { display:flex; flex-direction:column; background:#101010; border:1px solid #333; margin-bottom:5px; position:relative; }
-        .ed-wrap.fs { position:fixed; top:0; left:0; width:100%; height:100% !important; z-index:999999; margin:0; background:#050505; }
+        .ed-wrap.fs { position:fixed !important; top:0; left:0; width:100% !important; height:100% !important; z-index:999999; margin:0; background:#050505; }
         .ed-header { background:#1a1a1a; padding:5px 10px; display:none; justify-content:space-between; align-items:center; border-bottom:1px solid #333; }
         .ed-wrap.fs .ed-header { display:flex; }
         .ed-body { display:flex; flex:1; overflow:hidden; }
@@ -60,7 +59,7 @@
 
     ui.innerHTML = `
         <div style="background:#111;padding:12px;display:flex;justify-content:space-between;border-bottom:1px solid #00ff41;flex-shrink:0;align-items:center;">
-            <b style="letter-spacing:1px;font-size:14px;">TOOLKIT V6.9.1</b>
+            <b style="letter-spacing:1px;font-size:14px;">TOOLKIT V6.9.2</b>
             <button id="close_mtl" style="background:#400;color:#f00;border:1px solid #f00;padding:4px 12px;font-weight:bold;border-radius:3px;">CLOSE</button>
         </div>
         <div style="display:flex;background:#000;overflow-x:auto;border-bottom:1px solid #222;flex-shrink:0;">
@@ -77,7 +76,6 @@
     ui.querySelector('#close_mtl').onclick = () => host.remove();
     const cnt = ui.querySelector('#mtl_cnt');
 
-    // --- UTILS ---
     const fmtSz = (b) => {
         if(b===0) return '0 B';
         const k=1024, s=['B','KB','MB','GB'], i=Math.floor(Math.log(b)/Math.log(k));
@@ -89,17 +87,11 @@
             const blob = new Blob([data], { type: 'application/octet-stream' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
-            a.href = url;
-            a.download = name;
-            a.style.display = 'none';
-            document.body.appendChild(a);
-            a.click();
+            a.href = url; a.download = name; a.style.display = 'none';
+            document.body.appendChild(a); a.click();
             setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); }, 180000); 
             return true;
-        } catch(e) {
-            alert('Save Error: ' + e.message);
-            return false;
-        }
+        } catch(e) { alert('Save Error: ' + e.message); return false; }
     };
 
     const show = async (target) => {
@@ -117,7 +109,6 @@
                 </div>
             `;
             cnt.appendChild(d);
-            
             d.querySelector('#btn_fs').onclick = () => { document.documentElement.requestFullscreen().catch(()=>{}); host.remove(); };
             d.querySelector('#btn_ed').onclick = () => { document.designMode = document.designMode === 'on' ? 'off' : 'on'; host.remove(); };
             d.querySelector('#btn_ua').onclick = () => {
@@ -139,8 +130,6 @@
 
         if (target === 'data') {
             const getJ = (s) => { let o={}; Object.keys(s).sort().forEach(k=>o[k]=s.getItem(k)); return JSON.stringify(o,null,2); };
-            
-            // --- COOKIES LOGIC ---
             const getCookies = () => {
                 if(!document.cookie) return "{}";
                 const c = {};
@@ -150,91 +139,58 @@
                 });
                 return JSON.stringify(c, null, 2);
             };
-            
             const saveCookies = (d) => {
                 const old = JSON.parse(getCookies());
-                for(let k in old) { // Удаляем ключи, которых больше нет
-                    if(!(k in d)) document.cookie = `${k}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
-                }
-                for(let k in d) { // Обновляем/добавляем
-                    document.cookie = `${k}=${d[k]}; path=/`;
-                }
+                for(let k in old) if(!(k in d)) document.cookie = `${k}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
+                for(let k in d) document.cookie = `${k}=${d[k]}; path=/`;
             };
 
             const createSection = (title, id, initialData, saveFn) => {
                 const sec = document.createElement('div');
                 sec.style.marginBottom = '20px';
-                
-                // Заголовок и кнопка FS
                 const headRow = document.createElement('div');
                 headRow.style.cssText = 'display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;';
                 headRow.innerHTML = `<span class="label-txt" style="margin:0;">${title}</span>`;
-                
                 const btnFs = document.createElement('button');
                 btnFs.className = 'sm-btn'; btnFs.innerHTML = '⛶ FS';
                 headRow.appendChild(btnFs);
 
-                // Обертка редактора
                 const edWrap = document.createElement('div');
                 edWrap.className = 'ed-wrap'; edWrap.style.height = '160px';
-                
-                // Хедер для FS режима
                 const fsHeader = document.createElement('div');
                 fsHeader.className = 'ed-header';
                 fsHeader.innerHTML = `<b style="color:#00ff41;">${title} EDITOR</b>`;
                 const btnCloseFs = document.createElement('button');
                 btnCloseFs.className = 'sm-btn'; btnCloseFs.style.background = '#400'; btnCloseFs.style.borderColor = '#f00'; btnCloseFs.innerText = '✖ CLOSE';
-                fsHeader.appendChild(btnCloseFs);
-                edWrap.appendChild(fsHeader);
+                fsHeader.appendChild(btnCloseFs); edWrap.appendChild(fsHeader);
 
-                // Тело редактора (цифры + поле)
                 const edBody = document.createElement('div');
                 edBody.className = 'ed-body';
-                
                 const lines = document.createElement('div');
                 lines.className = 'ed-lines';
-                
                 const area = document.createElement('textarea');
                 area.id = id; area.className = 'editor-area'; area.value = initialData;
                 area.setAttribute('spellcheck', 'false'); area.setAttribute('autocorrect', 'off'); area.setAttribute('autocapitalize', 'off');
                 
-                edBody.appendChild(lines);
-                edBody.appendChild(area);
-                edWrap.appendChild(edBody);
+                edBody.appendChild(lines); edBody.appendChild(area); edWrap.appendChild(edBody);
 
-                // Синхронизация строк
                 const updateLines = () => {
-                    const count = area.value.split('\\n').length;
+                    const count = area.value.split('\n').length;
                     lines.innerHTML = Array(count).fill(0).map((_, i) => i + 1).join('<br>');
                 };
-                area.addEventListener('input', updateLines);
-                area.addEventListener('scroll', () => { lines.scrollTop = area.scrollTop; });
-                updateLines(); // init
+                area.oninput = updateLines;
+                area.onscroll = () => { lines.scrollTop = area.scrollTop; };
+                updateLines();
 
-                // Логика FS
-                const toggleFs = () => {
-                    edWrap.classList.toggle('fs');
-                    updateLines(); // Пересчет при ресайзе
-                };
-                btnFs.onclick = toggleFs;
-                btnCloseFs.onclick = toggleFs;
+                const toggleFs = () => { edWrap.classList.toggle('fs'); updateLines(); };
+                btnFs.onclick = toggleFs; btnCloseFs.onclick = toggleFs;
 
-                // Кнопка сохранения
                 const btnSave = document.createElement('button');
                 btnSave.className = 'b-big'; btnSave.innerText = 'SAVE ' + title;
                 btnSave.onclick = () => {
-                    try {
-                        const data = JSON.parse(area.value);
-                        saveFn(data);
-                        alert(title + ' Saved! Reloading...');
-                        location.reload();
-                    } catch(e) { alert('JSON Error: ' + e.message); }
+                    try { saveFn(JSON.parse(area.value)); alert(title + ' Saved!'); location.reload(); } catch(e) { alert('JSON Error: ' + e.message); }
                 };
-
-                sec.appendChild(headRow);
-                sec.appendChild(edWrap);
-                sec.appendChild(btnSave);
-                cnt.appendChild(sec);
+                sec.appendChild(headRow); sec.appendChild(edWrap); sec.appendChild(btnSave); cnt.appendChild(sec);
             };
 
             createSection('COOKIES', 'ed_ck', getCookies(), saveCookies);
@@ -243,226 +199,98 @@
         }
 
         if (target === 'files') {
-            cnt.innerHTML = '<i style="color:#666">Estimating Storage...</i>';
+            cnt.innerHTML = '<i style="color:#666">Calculating...</i>';
             try {
-                // GLOBAL STORAGE USAGE
                 if (navigator.storage && navigator.storage.estimate) {
                     const est = await navigator.storage.estimate();
-                    const usage = fmtSz(est.usage || 0);
-                    const quota = fmtSz(est.quota || 0);
                     const header = document.createElement('div');
                     header.style.cssText = 'padding:10px;background:#111;margin-bottom:15px;border:1px solid #444;font-size:12px;';
-                    header.innerHTML = `<b>💾 GLOBAL USAGE:</b> <span style="color:#ffeb3b">\${usage}</span> <span style="color:#666">/ \${quota}</span>`;
-                    cnt.innerHTML = '';
-                    cnt.appendChild(header);
-                } else {
-                    cnt.innerHTML = '';
+                    header.innerHTML = `<b>💾 GLOBAL:</b> <span style="color:#ffeb3b">${fmtSz(est.usage)}</span> <span style="color:#666">/ ${fmtSz(est.quota)}</span>`;
+                    cnt.innerHTML = ''; cnt.appendChild(header);
                 }
 
                 const keys = await caches.keys();
-                if (!keys.length) cnt.innerHTML += 'No cache storage found.';
-                
+                if (!keys.length) cnt.innerHTML += 'No cache storage.';
                 for (const k of keys) {
                     const openCache = await caches.open(k);
                     const items = await openCache.keys();
-                    
                     const section = document.createElement('div');
                     section.style.marginBottom = '20px';
-                    // Header with CALC button
                     const headRow = document.createElement('div');
                     headRow.style.cssText = "background:#222;padding:8px;color:#00ff41;font-size:11px;display:flex;justify-content:space-between;align-items:center;";
-                    headRow.innerHTML = `<span>📂 \${k} [\${items.length}]</span>`;
-                    
+                    headRow.innerHTML = `<span>📂 ${k} [${items.length}]</span>`;
                     const btnCalc = document.createElement('button');
-                    btnCalc.className = 'sm-btn';
-                    btnCalc.style.background = '#444';
-                    btnCalc.innerText = '📊 CALC SIZES';
-                    
-                    headRow.appendChild(btnCalc);
-                    section.appendChild(headRow);
+                    btnCalc.className = 'sm-btn'; btnCalc.style.background = '#444'; btnCalc.innerText = '📊 CALC SIZES';
+                    headRow.appendChild(btnCalc); section.appendChild(headRow);
 
-                    // Stats output
                     const statsDiv = document.createElement('div');
                     statsDiv.style.cssText = "padding:5px;font-size:10px;color:#888;border-bottom:1px solid #333;display:none;";
                     section.appendChild(statsDiv);
-                    
                     const list = document.createElement('div');
-                    list.style.display = items.length > 10 ? 'none' : 'block';
-                    
-                    if (items.length > 10) {
-                        const btnShow = document.createElement('button');
-                        btnShow.className = 'sm-btn'; btnShow.style.width = '100%'; btnShow.style.margin = '5px 0';
-                        btnShow.innerText = 'Expand ' + items.length + ' files';
-                        btnShow.onclick = () => { list.style.display = 'block'; btnShow.remove(); };
-                        section.appendChild(btnShow);
-                    }
+                    list.style.display = items.length > 8 ? 'none' : 'block';
 
-                    // Logic for calculating sizes
                     btnCalc.onclick = async () => {
-                        btnCalc.innerText = '⏳ ...';
-                        let totalSz = 0;
-                        let opaqueCnt = 0;
-                        
+                        btnCalc.innerText = '⏳...'; let totalSz = 0, opaqueCnt = 0;
                         for (let i = 0; i < items.length; i++) {
                             const req = items[i];
-                            const rowId = \`r-\${k.replace(/\\W/g,'')}-\${i}\`;
-                            const metaEl = shadow.getElementById(rowId); // look inside shadow
-                            
+                            const rowId = `r-${k.replace(/\W/g,'')}-${i}`;
+                            const metaEl = shadow.getElementById(rowId);
                             try {
                                 const r = await openCache.match(req);
-                                let szText = '';
-                                
-                                if (r.type === 'opaque') {
-                                    opaqueCnt++;
-                                    szText = '<span class="opaque-tag">[OPAQUE (~7MB Quota)]</span>';
-                                } else {
-                                    const b = await r.blob();
-                                    totalSz += b.size;
-                                    szText = \`<span class="sz-tag">\${fmtSz(b.size)}</span>\`;
-                                }
-                                
-                                if (metaEl) metaEl.innerHTML = szText;
+                                if (r.type === 'opaque') { opaqueCnt++; if(metaEl) metaEl.innerHTML = '<span class="opaque-tag">[OPAQUE (~7MB)]</span>'; }
+                                else { const b = await r.blob(); totalSz += b.size; if(metaEl) metaEl.innerHTML = `<span class="sz-tag">${fmtSz(b.size)}</span>`; }
                             } catch(e) {}
                         }
-                        
-                        btnCalc.innerText = 'DONE';
-                        statsDiv.style.display = 'block';
-                        statsDiv.innerHTML = \`REAL SIZE: <b style="color:#fff">\${fmtSz(totalSz)}</b> | OPAQUE FILES: <b style="color:#ff5555">\${opaqueCnt}</b> (Huge Quota Usage)\`;
+                        btnCalc.innerText = 'DONE'; statsDiv.style.display = 'block';
+                        statsDiv.innerHTML = `REAL SIZE: <b style="color:#fff">${fmtSz(totalSz)}</b> | OPAQUE: <b style="color:#ff5555">${opaqueCnt}</b>`;
                     };
 
                     items.forEach((req, idx) => {
-                        const row = document.createElement('div');
-                        row.className = 'row-item';
+                        const row = document.createElement('div'); row.className = 'row-item';
                         const fileName = req.url.split('/').pop().split('?')[0] || 'index.html';
-                        const rowId = \`r-\${k.replace(/\\W/g,'')}-\${idx}\`;
-                        
-                        row.innerHTML = \`
-                            <div style="flex:1;overflow:hidden;margin-right:10px;">
-                                <span style="font-size:11px;word-break:break-all;">\${fileName}</span>
-                                <span id="\${rowId}" class="f-meta">Size: ?</span>
-                            </div>
-                        \`;
-                        
-                        const acts = document.createElement('div');
-                        acts.style.display = 'flex';
-                        
+                        row.innerHTML = `<div style="flex:1;overflow:hidden;margin-right:10px;"><span style="font-size:11px;word-break:break-all;">${fileName}</span><span id="r-${k.replace(/\W/g,'')}-${idx}" class="f-meta">Size: ?</span></div>`;
                         const btnDl = document.createElement('button'); btnDl.className='sm-btn'; btnDl.innerText = '⬇️';
-                        btnDl.onclick = async () => {
-                            try {
-                                const r = await openCache.match(req.url);
-                                const buf = await r.arrayBuffer(); 
-                                downloadRaw(buf, fileName);
-                            } catch(e) { alert('Download failed: ' + e); }
-                        };
-                        
-                        const btnUp = document.createElement('button'); btnUp.className='sm-btn'; btnUp.innerText = '✏️';
-                        btnUp.onclick = () => {
-                            const i = document.createElement('input'); i.type = 'file';
-                            i.onchange = async () => {
-                                if(!i.files[0]) return;
-                                const f = i.files[0];
-                                await openCache.put(req.url, new Response(f, {headers: {'Content-Type': f.type || 'application/octet-stream'}}));
-                                alert('File replaced!');
-                            }; i.click();
-                        };
-
-                        acts.appendChild(btnDl); acts.appendChild(btnUp);
-                        row.appendChild(acts);
-                        list.appendChild(row);
+                        btnDl.onclick = async () => { const r = await openCache.match(req.url); const buf = await r.arrayBuffer(); downloadRaw(buf, fileName); };
+                        row.appendChild(btnDl); list.appendChild(row);
                     });
-                    section.appendChild(list);
-                    cnt.appendChild(section);
+                    section.appendChild(list); cnt.appendChild(section);
                 }
-            } catch(e) { cnt.innerHTML = 'Cache Access Error: ' + e.message; }
+            } catch(e) { cnt.innerHTML = 'Error: ' + e.message; }
         }
 
         if (target === 'db') {
-            if (!indexedDB.databases) { cnt.innerHTML = 'IndexedDB API not fully supported.'; return; }
             const dbs = await indexedDB.databases();
-            cnt.innerHTML = dbs.length ? '' : 'No Databases.';
-            
+            cnt.innerHTML = dbs.length ? '' : 'No DB.';
             for (const dbInfo of dbs) {
                 const box = document.createElement('div');
-                box.style.background = '#111'; box.style.padding = '10px'; box.style.marginBottom = '10px'; box.style.border = '1px solid #333';
-                box.innerHTML = \`<b style="color:#00ff41;font-size:12px;">🗄️ \${dbInfo.name}</b><br>\`;
-                
+                box.style.cssText = 'background:#111;padding:10px;margin-bottom:10px;border:1px solid #333;';
+                box.innerHTML = `<b style="color:#00ff41;font-size:12px;">🗄️ ${dbInfo.name}</b><br>`;
                 const openReq = indexedDB.open(dbInfo.name);
                 openReq.onsuccess = (e) => {
                     const db = e.target.result;
-                    if(db.objectStoreNames.length === 0) box.innerHTML += '<i style="font-size:10px;color:#555">Empty DB</i>';
                     Array.from(db.objectStoreNames).forEach(storeName => {
-                        const row = document.createElement('div');
-                        row.className = 'row-item'; row.style.marginTop = '5px';
-                        row.innerHTML = \`<span style="color:#aaa;font-size:11px;">\${storeName}</span>\`;
-                        
-                        const btnDiv = document.createElement('div');
-                        
+                        const row = document.createElement('div'); row.className = 'row-item';
+                        row.innerHTML = `<span style="color:#aaa;font-size:11px;">${storeName}</span>`;
                         const btnEx = document.createElement('button'); btnEx.className='sm-btn'; btnEx.innerText = 'EXPORT';
                         btnEx.onclick = () => {
-                            try {
-                                const tx = db.transaction(storeName, 'readonly');
-                                const store = tx.objectStore(storeName);
-                                const req = store.getAll();
-                                req.onsuccess = (ev) => {
-                                    const res = ev.target.result;
-                                    if (!res) { alert('No data to export'); return; }
-                                    const jsonStr = JSON.stringify(res, null, 2);
-                                    downloadRaw(jsonStr, \`\${dbInfo.name}_\${storeName}.json\`);
-                                };
-                                req.onerror = (err) => alert('Export Read Error: ' + err.target.error);
-                            } catch(err) { alert('Export Init Error: ' + err.message); }
+                            const tx = db.transaction(storeName, 'readonly');
+                            tx.objectStore(storeName).getAll().onsuccess = (ev) => downloadRaw(JSON.stringify(ev.target.result, null, 2), `${storeName}.json`);
                         };
-                        
-                        const btnIm = document.createElement('button'); btnIm.className='sm-btn'; btnIm.innerText = '✏️ IMPORT';
-                        btnIm.onclick = () => {
-                             const i = document.createElement('input'); i.type = 'file';
-                             i.onchange = (evFile) => {
-                                 const f = evFile.target.files[0];
-                                 if(!f) return;
-                                 const reader = new FileReader();
-                                 reader.onload = (res) => {
-                                     try {
-                                         const jsonData = JSON.parse(res.target.result);
-                                         if(!Array.isArray(jsonData)) throw new Error('File must be a JSON Array');
-                                         const tx = db.transaction(storeName, 'readwrite');
-                                         const store = tx.objectStore(storeName);
-                                         const clr = store.clear();
-                                         clr.onsuccess = () => {
-                                             jsonData.forEach(item => store.put(item));
-                                             alert(\`Imported \${jsonData.length} items to \${storeName}\`);
-                                         };
-                                         clr.onerror = (err) => alert('Clear failed: ' + err.target.error);
-                                     } catch(err) { alert('Import error: ' + err.message); }
-                                 };
-                                 reader.readAsText(f);
-                             };
-                             i.click();
-                        };
-
-                        btnDiv.appendChild(btnEx);
-                        btnDiv.appendChild(btnIm);
-                        row.appendChild(btnDiv);
-                        box.appendChild(row);
+                        row.appendChild(btnEx); box.appendChild(row);
                     });
                 };
-                openReq.onerror = () => { box.innerHTML += '<span style="color:red"> Access Denied</span>'; };
                 cnt.appendChild(box);
             }
         }
 
         if (target === 'logs') {
-            const bCl = document.createElement('button'); bCl.className='b-big'; bCl.style.width='100%'; bCl.innerText = 'CLEAR LOGS';
-            bCl.onclick = () => { window._logs = []; show('logs'); };
-            cnt.appendChild(bCl);
-            
-            const logBox = document.createElement('div');
-            logBox.style.marginTop = '10px';
+            const bCl = document.createElement('button'); bCl.className='b-big'; bCl.innerText = 'CLEAR LOGS';
+            bCl.onclick = () => { window._logs = []; show('logs'); }; cnt.appendChild(bCl);
+            const logBox = document.createElement('div'); logBox.style.marginTop = '10px';
             window._logs.slice().reverse().forEach(l => {
-                const el = document.createElement('div');
-                el.style.cssText = 'border-bottom:1px solid #111;padding:6px 0;font-size:10px;word-break:break-all;';
+                const el = document.createElement('div'); el.style.cssText = 'border-bottom:1px solid #111;padding:6px 0;font-size:10px;word-break:break-all;';
                 el.style.color = l.t === 'ERR' ? '#ff4444' : '#00ff41';
-                el.innerText = \`[\${l.time}] \${l.m}\`;
-                logBox.appendChild(el);
+                el.innerText = `[${l.time}] ${l.m}`; logBox.appendChild(el);
             });
             cnt.appendChild(logBox);
         }
@@ -471,10 +299,8 @@
     ui.querySelectorAll('.mtl-tab').forEach(tab => {
         tab.onclick = () => {
             ui.querySelectorAll('.mtl-tab').forEach(t => t.classList.remove('active-tab'));
-            tab.classList.add('active-tab');
-            show(tab.dataset.t);
+            tab.classList.add('active-tab'); show(tab.dataset.t);
         };
     });
-
     show('main');
 })();
